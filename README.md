@@ -13,9 +13,9 @@ Saat ini Islamic Pedia hanya mendukung wilayah Indonesia. Dukungan untuk negara 
 - Pencarian Masjid Terdekat (Radius 3km) dengan opsi navigasi Google Maps.
 - Kalender Hijriyah dengan Sistem Pergantian Hari pada Waktu Maghrib sesuai Ketentuan Syariat Islam.
 - Ensiklopedia Islami (Wikipedia).
-- **Baru:** Penyesuaian Tanggal Hijriyah Manual (+/- 2 hari) untuk sinkronisasi rukyat.
-- **Baru:** Pilihan Metode Perhitungan Sholat (Kemenag RI, MWL, ISNA, dll).
-- **Baru:** Pilihan Mazhab Ashar (Syafi'i/Hanafi).
+- Penyesuaian Tanggal Hijriyah Manual (+/- 2 hari) untuk sinkronisasi rukyat.
+- Pilihan Metode Perhitungan Sholat (Kemenag RI, MWL, ISNA, dll).
+- Pilihan Mazhab Ashar (Syafi'i/Hanafi).
 
 ## Panduan Penggunaan
 
@@ -39,6 +39,7 @@ Shortcut Utama Untuk Masuk ke Mode Perintah (command layer): `NVDA+Shift+I`.
 - **T** - Menampilkan tanggal Hijriyah hari ini.
 - **I** - Mencari topik di Ensiklopedia Islami.
 - **Spasi** - Menghentikan audio (Adzan/Pengingat) yang sedang berbunyi.
+- **CTRL + TAB** atau **Right Arrow** untuk berpindah tab di menu pengaturan.
 - **Esc** - Keluar dari mode Islamic Pedia.
 
 ## Pengaturan
@@ -62,7 +63,7 @@ Add-on ini dirilis di bawah lisensi GNU General Public License versi 2 (GPL v2).
 
 ## Dukungan dan Kontribusi Pengembangan
 
-Mari beramal jariah dengan mendukung pengembangan Islamic Pedia agar terus bermanfaat bagi tunanetra muslim lainnya. Anda dapat berkontribusi melalui masukan, melaporkan bug, atau pengajuan fitur baru dengan cara menghubungi kontak yang tersedia, membuka issue di GitHub, atau berdonasi untuk keberlanjutan pengembangan.
+Mari beramal jariah dengan mendukung pengembangan Islamic Pedia agar terus bermanfaat bagi tunanetra muslim lainnya. Anda dapat berkontribusi melalui masukan, melaporkan bug, atau pengajuan fitur baru dengan cara menghubungi kontak yang tersedia, membuka issue atau permintaan pull di GitHub, atau berdonasi untuk keberlanjutan pengembangan.
 
 Metode Donasi yang Tersedia:
 
