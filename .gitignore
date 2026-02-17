@@ -1,0 +1,7 @@
+*.html
+*.mo
+*.pot
+*.nvda-addon
+.sconsign.dblite
+manifest.ini
+tests/

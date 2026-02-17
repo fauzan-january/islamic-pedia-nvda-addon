@@ -1,0 +1,11 @@
+name = IslamicPedia
+summary = "{addon_summary}"
+description = """{addon_description}"""
+author = "Fauzan January <surel@fauzanaja.com>"
+url = https://fauzanaja.com/nvda-addon/
+version = 1.0.0
+changelog = """{addon_changelog}"""
+docFileName = readme.html
+minimumNVDAVersion = 2024.1
+lastTestedNVDAVersion = 2025.3
+updateChannel = None

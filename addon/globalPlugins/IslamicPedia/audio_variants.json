@@ -1,0 +1,31 @@
+{
+	"base_url": "https://raw.githubusercontent.com/fauzan-january/My-Project-Assets/master/islamicpedia/audio/",
+	"variants": {
+		"Adzan": {
+			"Adzan - Syekh Mishary Rasyid Al-Fasy": "dzami1.wav",
+			"Adzan - Syekh Ali Ahmed Mulla": "dzami2.wav",
+			"Adzan - Habib Syekh Bin Abdul Kadir Assegaf": "dzami3.wav"
+		},
+		"Subuh": {
+			"Adzan - Syekh Mishary Rasyid Al-Fasy": "subuh1.wav",
+			"Adzan - Syekh Ali Ahmed Mulla": "subuh2.wav",
+			"Adzan - Habib Syekh Bin Abdul Kadir Assegaf": "subuh3.wav"
+		},
+		"Imsak": {
+			"Senandung Imsak Merdu": "imsak1.wav",
+			"Sirine Imsak": "imsak2.wav",
+			"Sirine Imsak Nyaring": "imsak3.wav"
+		},
+		"Terbit": {
+			"Instrument Pengingat Waktu Terbit 1": "terbit1.wav",
+			"Instrument Pengingat Waktu Terbit 2": "terbit2.wav",
+			"Instrument Pengingat Waktu Terbit 3": "terbit3.wav",
+			"Instrument Pengingat Waktu Terbit 4": "terbit4.wav"
+		},
+		"Dhuha": {
+			"Alarm Pengingat Waktu Dhuha 1": "dhuha1.wav",
+			"Alarm Pengingat Waktu Dhuha 2": "dhuha2.wav",
+			"Alarm Pengingat Waktu Dhuha 3": "dhuha3.wav"
+		}
+	}
+}

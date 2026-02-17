@@ -1,0 +1,41 @@
+@charset "utf-8";
+body { 
+font-family : Verdana, Arial, Helvetica, Sans-serif;
+line-height: 1.2em;
+} 
+h1, h2 {text-align: center}
+dt { 
+font-weight : bold; 
+float : left; 
+width: 10%;
+clear: left
+} 
+dd { 
+margin : 0 0 0.4em 0; 
+float : left;
+width: 90%;
+display: block;
+} 
+p { clear : both; 
+} 
+a { text-decoration : underline; 
+} 
+:active { 
+text-decoration : none; 
+}
+a:focus, a:hover {outline: solid}
+.lang-switch {
+text-align: center;
+margin: 0.5em 0 1em;
+}
+.lang-switch a {
+display: inline-block;
+padding: 0.4em 0.8em;
+border: 1px solid #333;
+border-radius: 4px;
+text-decoration: none;
+}
+.lang-switch a:focus, .lang-switch a:hover {
+outline: none;
+background: #f0f0f0;
+}
