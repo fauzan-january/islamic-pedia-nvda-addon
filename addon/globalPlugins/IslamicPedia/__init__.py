@@ -5,7 +5,7 @@ import wx
 import logHandler
 
 from .config import Config
-from .interface import SettingsDialog
+from .interface import SettingsDialog, ZakatDialog
 from .api import PrayerTimeAPI
 from .player import SoundManager
 from .background import Scheduler
@@ -106,6 +106,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			"kb:i": "islamicPedia",
 			"kb:p": "settings",
 			"kb:t": "hijriDate",
+			"kb:z": "zakat",
 			"kb:escape": "exitLayer",
 			"kb:space": "stop",
 		}
@@ -251,6 +252,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			_("T: Menampilkan tanggal Hijriyah"),
 			_("M: Mencari masjid terdekat"),
 			_("I: Cari Ensiklopedia Islami"),
+			_("Z: Kalkulator Zakat"),
 			_("Spasi: Menghentikan audio pengingat yang sedang berputar saat waktu telah tiba"),
 			_("Esc: Keluar dari mode Islamic Pedia")
 		]
@@ -358,8 +360,30 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			ui.message(_("Gagal memuat data. Mohon periksa koneksi internet."))
 
 	def script_settings(self, gesture):
-		# Optimized: Call directly since we are already on Main Thread via CallLater
-		self.showSettingsDialog()
+		# Defer to next event loop iteration so NVDA finishes processing the gesture first.
+		# This fixes the focus issue on first open after NVDA restart.
+		wx.CallAfter(self.showSettingsDialog)
+
+	def script_zakat(self, gesture):
+		"""Open the Zakat Calculator dialog."""
+		wx.CallAfter(self._showZakatDialog)
+
+	def _showZakatDialog(self):
+		if not self.check_dialog_open():
+			return
+		self.is_dialog_open = True
+		gui.mainFrame.prePopup()
+		try:
+			dlg = ZakatDialog(gui.mainFrame)
+			try:
+				dlg.ShowModal()
+			finally:
+				dlg.Destroy()
+		except Exception as e:
+			logHandler.log.error(f"IslamicPedia: Error showing zakat dialog: {e}")
+		finally:
+			gui.mainFrame.postPopup()
+			self.is_dialog_open = False
 
 	def script_qibla(self, gesture):
 		# Check if we have coordinates
@@ -416,12 +440,21 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 	def _announce_qibla(self, lat, lon):
 		try:
-			from .qibla import calculate_bearing, get_cardinal_direction
+			from .qibla import calculate_bearing, get_cardinal_direction, calculate_distance
 			bearing = calculate_bearing(lat, lon)
 			direction = get_cardinal_direction(bearing)
 			
-			# "Arah Kiblat: 295 derajat (Barat Laut)."
-			msg = _("Arah Kiblat: {:.0f} derajat ({}).").format(bearing, direction)
+			# Kaaba Coordinates
+			kaaba_lat = 21.422487
+			kaaba_lon = 39.826206
+			
+			distance = calculate_distance(lat, lon, kaaba_lat, kaaba_lon)
+			
+			# Translators: Qibla announcement. {bearing} is degrees, {dir} is direction, {dist} is distance in km.
+			# "Arah Kiblat: 295 derajat (Barat Laut). Jarak ke Ka'bah: 7320 kilometer."
+			msg_fmt = _("Arah Kiblat: {:.0f} derajat ({}). Jarak ke Ka'bah: {:.0f} kilometer.")
+			msg = msg_fmt.format(bearing, direction, distance)
+			
 			ui.message(msg)
 		except Exception as e:
 			logHandler.log.error(f"IslamicPedia: Qibla calculation error: {e}")
@@ -437,8 +470,10 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 			self.is_dialog_open = True
 			try:
-				dlg = SettingsDialog(None, self.config, self.api, self.scheduler, self.player)
+				dlg = SettingsDialog(gui.mainFrame, self.config, self.api, self.scheduler, self.player)
+				gui.mainFrame.prePopup()
 				res = dlg.ShowModal()
+				gui.mainFrame.postPopup()
 				dlg.Destroy()
 				
 				if res == wx.ID_OK:
@@ -471,15 +506,34 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		
 		self._is_fetching_mosque = True
 		
-		# Feedback Timer: Announce "Sedang mencari masjid terdekat..." every 1 second
+		# Get progress mode from config
+		progress_mode = self.config.get_search_progress_mode()
+		
+		# Feedback helper function
+		def do_feedback():
+			if progress_mode in ["speech", "both"]:
+				ui.message(_("Sedang mencari masjid terdekat..."))
+			if progress_mode in ["beep", "both"]:
+				try:
+					import tones
+					tones.beep(440, 50)
+				except Exception:
+					pass
+		
+		# Feedback Timer: Run feedback every 1 second
 		self.mosque_feedback_timer = wx.Timer()
 		def feedback_tick(evt):
-			ui.message(_("Sedang mencari masjid terdekat..."))
+			do_feedback()
+			
 		self.mosque_feedback_timer.Bind(wx.EVT_TIMER, feedback_tick)
-		self.mosque_feedback_timer.Start(1000)
 		
-		# Initial announcement
-		ui.message(_("Sedang mencari masjid terdekat..."))
+		# Only start timer if mode is not off
+		if progress_mode != "off":
+			self.mosque_feedback_timer.Start(1000)
+		
+		# Initial announcement (Always speak once for clarity, unless off)
+		if progress_mode != "off":
+			ui.message(_("Sedang mencari masjid terdekat..."))
 		
 		def fetch():
 			try:

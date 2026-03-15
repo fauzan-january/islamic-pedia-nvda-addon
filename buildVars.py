@@ -8,19 +8,20 @@ addon_info = AddonInfo(
 		"Solusi lengkap kebutuhan Tunanetra Muslim: Jadwal Sholat, Arah Kiblat, Kalender Hijriyah, dan masih banyak fitur canggih lainnya dalam satu addon NVDA yang aksesibel.\n"
 		"Cara pakai: Tekan shortcut NVDA + SHIFT + I (masuk ke mode Islamic Pedia). Tekan B atau F1 untuk menampilkan bantuan dan daftar perintah penggunaan."
 	),
-	addon_version="1.0.0",
+	addon_version="1.1.0",
 	addon_changelog=_(
-		"- Rilis perdana Islamic Pedia NVDA Addon.\n"
-		"- Jadwal Sholat lima Waktu beserta Waktu Tambahan (Imsak, Terbit, dan Dhuha).\n"
-		"- Notifikasi Waktu Sholat dan Waktu Tambahan, Dilengkapi Pra-pengingat serta Audio yang Dapat Disesuaikan.\n"
-		"- Informasi Arah Kiblat Berdasarkan Lokasi Pengguna (Ditampilkan dalam Derajat dan Arah Mata Angin).\n"
-		"- Pencarian Masjid Terdekat (Radius 3km).\n"
-		"- Kalender Hijriyah dengan Sistem Pergantian Hari pada Waktu Maghrib sesuai Ketentuan Syariat Islam.\n"
-		"- Ensiklopedia Islami (Wikipedia).\n"
-		"- Penyesuaian Tanggal Hijriyah Manual (+/- 2 hari) jika ada perbedaan rukyat.\n"
-		"- Pilihan Metode Perhitungan Sholat (Kemenag RI, MWL, dll).\n"
-		"- Pilihan Mazhab Ashar (Syafi'i/Hanafi).\n"
-		"- Dukungan penuh Bahasa Indonesia."
+		"- Menambahkan fitur Kalkulator Zakat untuk menghitung 5 jenis zakat: Penghasilan, Maal (Harta/Tabungan), Emas, Perak, dan Fitrah.\n"
+		"- Menambahkan shortcut Z untuk membuka Kalkulator Zakat (NVDA+Shift+I lalu Z).\n"
+		"- Menambahkan input dinamis pada dialog Kalkulator Zakat yang berubah sesuai jenis zakat yang dipilih dari dropdown.\n"
+		"- Menambahkan auto-fetch harga emas Antam Indonesia dari harga-emas.org saat dialog zakat dibuka, dengan fallback ke harga emas internasional jika gagal.\n"
+		"- Menambahkan tombol Salin Hasil pada dialog Kalkulator Zakat yang muncul otomatis setelah ada hasil perhitungan.\n"
+		"- Menambahkan pengaturan volume notifikasi (slider 0-100%) dengan live preview saat tombol test ditekan.\n"
+		"- Menambahkan pemilihan perangkat audio output untuk notifikasi dengan fallback otomatis ke perangkat default.\n"
+		"- Menambahkan grup Pengaturan Global di bagian atas tab Notifikasi.\n"
+		"- Mengoptimalkan metode pemutaran audio notifikasi dari winsound ke waveOutOpen (WinMM) untuk file WAV.\n"
+		"- Mengoptimalkan pengelolaan fokus dialog menggunakan pola standar NVDA (prePopup/postPopup).\n"
+		"- Memperbaiki dialog pengaturan yang tidak langsung mendapat fokus saat pertama kali dibuka setelah restart NVDA.\n"
+		"- Memperbaiki tombol Batal pada dialog pengaturan yang sebelumnya tidak memiliki handler."
 	),
 	addon_author="Fauzan January <surel@fauzanaja.com>",
 	addon_url="https://fauzanaja.com/nvda-addon/",

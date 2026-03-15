@@ -12,6 +12,7 @@ Saat ini Islamic Pedia hanya mendukung wilayah Indonesia. Dukungan untuk negara 
 - Informasi Arah Kiblat Berdasarkan Lokasi Pengguna (Ditampilkan dalam Derajat dan Arah Mata Angin).
 - Pencarian Masjid Terdekat (Radius 3km) dengan opsi navigasi Google Maps.
 - Kalender Hijriyah dengan Sistem Pergantian Hari pada Waktu Maghrib sesuai Ketentuan Syariat Islam.
+- Kalkulator Zakat (Penghasilan, Maal, Emas, Perak, Fitrah) dengan fitur auto-fetch harga emas.
 - Ensiklopedia Islami (Wikipedia).
 - Penyesuaian Tanggal Hijriyah Manual (+/- 2 hari) untuk sinkronisasi rukyat.
 - Pilihan Metode Perhitungan Sholat (Kemenag RI, MWL, ISNA, dll).
@@ -37,6 +38,7 @@ Shortcut Utama Untuk Masuk ke Mode Perintah (command layer): `NVDA+Shift+I`.
 - **K** - Menampilkan arah kiblat.
 - **M** - Mencari masjid terdekat (radius 3km).
 - **T** - Menampilkan tanggal Hijriyah hari ini.
+- **Z** - Membuka Kalkulator Zakat.
 - **I** - Mencari topik di Ensiklopedia Islami.
 - **Spasi** - Menghentikan audio (Adzan/Pengingat) yang sedang berbunyi.
 - **CTRL + TAB** atau **Right Arrow** untuk berpindah tab di menu pengaturan.

@@ -1,4 +1,5 @@
 import wx
+import threading
 import gui
 import ui
 import logHandler
@@ -33,25 +34,30 @@ class SettingsDialog(wx.Dialog):
 		# Initialize lazy loaded components to None
 		self.cmb_calc = None
 		self.cmb_asr = None
-		self.spin_adj = None # Also for Hijri adjustment if it was lazy loaded (it is in location tab which is always loaded, but good practice)
+		self.cmb_adj = None # Also for Hijri adjustment if it was lazy loaded (it is in location tab which is always loaded, but good practice)
 
-		# === TAB 1: LOKASI (Always Load) ===
+		# === TAB 1: UMUM (Always Load) ===
+		self.page_general = wx.Panel(self.notebook)
+		self.setup_general_tab()
+		self.notebook.AddPage(self.page_general, _("Umum"))
+
+		# === TAB 2: LOKASI (Always Load) ===
 		self.page_location = wx.Panel(self.notebook)
 		self.setup_location_tab()
 		self.notebook.AddPage(self.page_location, _("Lokasi"))
 
-		# === TAB 2: NOTIFIKASI (Lazy Load) ===
+		# === TAB 3: HISAB (Lazy Load) ===
+		self.page_method = wx.Panel(self.notebook)
+		self.method_tab_initialized = False
+		self.notebook.AddPage(self.page_method, _("Hisab"))
+
+		# === TAB 4: NOTIFIKASI (Lazy Load) ===
 		# Just create empty panel, content loaded on first visit
 		self.page_audio = wx.Panel(self.notebook)
 		self.audio_tab_initialized = False
 		self.notebook.AddPage(self.page_audio, _("Notifikasi"))
 
-		# === TAB 3: LANJUTAN (Metode & Koreksi) ===
-		self.page_method = wx.Panel(self.notebook)
-		self.method_tab_initialized = False
-		self.notebook.AddPage(self.page_method, _("Lanjutan"))
-
-		# === TAB 4: DONASI (Lazy Load) ===
+		# === TAB 5: DONASI (Lazy Load) ===
 		self.page_donation = wx.Panel(self.notebook)
 		self.donation_tab_initialized = False
 		self.notebook.AddPage(self.page_donation, _("Donasi"))
@@ -100,17 +106,52 @@ class SettingsDialog(wx.Dialog):
 
 	def on_tab_changed(self, event):
 		sel = event.GetSelection()
-		# 0 = Location, 1 = Audio, 2 = Method, 3 = Donation
-		if sel == 1 and not self.audio_tab_initialized:
-			self.setup_audio_tab()
-			self.audio_tab_initialized = True
-		elif sel == 2 and not self.method_tab_initialized:
+		# 0 = Umum, 1 = Location, 2 = Method, 3 = Audio, 4 = Donation
+		if sel == 2 and not self.method_tab_initialized:
 			self.setup_method_tab()
 			self.method_tab_initialized = True
-		elif sel == 3 and not self.donation_tab_initialized:
+		elif sel == 3 and not self.audio_tab_initialized:
+			self.setup_audio_tab()
+			self.audio_tab_initialized = True
+		elif sel == 4 and not self.donation_tab_initialized:
 			self.setup_donation_tab()
 			self.donation_tab_initialized = True
 		event.Skip()
+
+	def setup_general_tab(self):
+		sizer = wx.BoxSizer(wx.VERTICAL)
+		
+		# Explaining Text
+		lbl_expl = wx.StaticText(self.page_general, label=_("Preferensi umum untuk mengatur perilaku NVDA saat menggunakan fitur Islamic Pedia."))
+		lbl_expl.Wrap(500)
+		sizer.Add(lbl_expl, 0, wx.ALL, 10)
+
+		# Search Progress Indicator
+		self.search_progress_modes = [
+			(_("Mati"), "off"),
+			(_("Ucapkan pembaruan proses"), "speech"),
+			(_("Bip untuk pembaruan proses"), "beep"),
+			(_("Bip dan ucapkan pembaruan proses"), "both")
+		]
+		
+		lbl_progress = wx.StaticText(self.page_general, label=_("Indikator Proses Pencarian Masjid:"))
+		sizer.Add(lbl_progress, 0, wx.LEFT | wx.RIGHT | wx.TOP, 10)
+		
+		progress_choices = [x[0] for x in self.search_progress_modes]
+		self.cmb_search_progress = wx.Choice(self.page_general, choices=progress_choices)
+		
+		# Set selection based on config
+		curr_progress = self.config.get_search_progress_mode()
+		sel_progress = 2 # Default to "beep"
+		for i, v in enumerate(self.search_progress_modes):
+			if v[1] == curr_progress:
+				sel_progress = i
+				break
+		self.cmb_search_progress.SetSelection(sel_progress)
+		
+		sizer.Add(self.cmb_search_progress, 0, wx.EXPAND | wx.ALL, 10)
+		
+		self.page_general.SetSizer(sizer)
 
 	def setup_location_tab(self):
 		sizer = wx.BoxSizer(wx.VERTICAL)
@@ -222,9 +263,32 @@ class SettingsDialog(wx.Dialog):
 		sizer.Add(self.cmb_asr, 0, wx.EXPAND | wx.ALL, 10)
 
 		# Hijri Date Adjustment (Moved from Location Tab)
+		# Hijri Date Adjustment (Dropdown)
 		sb_adj = wx.StaticBoxSizer(wx.VERTICAL, self.page_method, _("Koreksi Tanggal Hijriyah (+/- hari)"))
-		self.spin_adj = wx.SpinCtrl(self.page_method, min=-2, max=2, initial=self.config.get_hijri_adjustment())
-		sb_adj.Add(self.spin_adj, 0, wx.ALL, 5)
+		
+		# Define mapping for Hijri adjustment values
+		self.hijri_adj_options = [
+			(_("Mundur 2 hari"), -2),
+			(_("Mundur 1 hari"), -1),
+			(_("Sesuai Kalender (0)"), 0),
+			(_("Maju 1 hari"), 1),
+			(_("Maju 2 hari"), 2)
+		]
+		
+		adj_choices = [x[0] for x in self.hijri_adj_options]
+		self.cmb_adj = wx.Choice(self.page_method, choices=adj_choices)
+		
+		# Set current value
+		curr_adj = self.config.get_hijri_adjustment()
+		sel_idx = 2 # Default to 0 (Sesuai Kalender)
+		for i, opt in enumerate(self.hijri_adj_options):
+			if opt[1] == curr_adj:
+				sel_idx = i
+				break
+				
+		self.cmb_adj.SetSelection(sel_idx)
+		
+		sb_adj.Add(self.cmb_adj, 0, wx.ALL | wx.EXPAND, 5)
 		sizer.Add(sb_adj, 0, wx.EXPAND | wx.ALL, 10)
 		
 		self.page_method.SetSizer(sizer)
@@ -237,17 +301,73 @@ class SettingsDialog(wx.Dialog):
 		# Define as instance variable so toggle_audio_options can access it
 		self.sizer_scroll = wx.BoxSizer(wx.VERTICAL)
 
-		# Pre-Reminder Settings (Global Duration)
-		self.sb_pre = wx.StaticBoxSizer(wx.VERTICAL, self.scroll_audio, _("Durasi Pengingat Sebelum Masuk Waktu"))
-		# self.chk_pre removed (moved to per-prayer)
-		
+		# =============================================
+		# GROUP 0: PENGATURAN GLOBAL
+		# =============================================
+		sb_global = wx.StaticBoxSizer(wx.VERTICAL, self.scroll_audio, _("Pengaturan Global"))
+
+		# --- Sub-row: Pre-Reminder Duration ---
 		bs_pre_dur = wx.BoxSizer(wx.HORIZONTAL)
-		lbl_pre_dur = wx.StaticText(self.scroll_audio, label=_("Durasi (menit):"))
+		lbl_pre_dur = wx.StaticText(self.scroll_audio, label=_("Durasi Pra-Pengingat (menit):"))
 		self.spin_pre_dur = wx.SpinCtrl(self.scroll_audio, value=str(self.config.data.get("pre_reminder_minutes", 10)), min=1, max=60)
 		bs_pre_dur.Add(lbl_pre_dur, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
 		bs_pre_dur.Add(self.spin_pre_dur, 0)
-		self.sb_pre.Add(bs_pre_dur, 0, wx.ALL, 5)
-		self.sizer_scroll.Add(self.sb_pre, 0, wx.EXPAND | wx.ALL, 5)
+		sb_global.Add(bs_pre_dur, 0, wx.ALL, 5)
+
+		# --- Sub-row: Volume Notifikasi ---
+		bs_vol = wx.BoxSizer(wx.HORIZONTAL)
+		lbl_vol = wx.StaticText(self.scroll_audio, label=_("Volume Notifikasi:"))
+		curr_vol = self.config.get_notification_volume()
+		# Store original so we can restore it if user cancels
+		self._original_volume = curr_vol
+		self.slider_volume = wx.Slider(
+			self.scroll_audio,
+			value=curr_vol,
+			minValue=0,
+			maxValue=100,
+			style=wx.SL_HORIZONTAL
+		)
+		self.slider_volume.SetLineSize(5)
+		self.slider_volume.SetPageSize(10)
+		self.lbl_vol_val = wx.StaticText(self.scroll_audio, label=f"{curr_vol}%")
+		bs_vol.Add(lbl_vol, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+		bs_vol.Add(self.slider_volume, 1, wx.EXPAND | wx.RIGHT, 5)
+		bs_vol.Add(self.lbl_vol_val, 0, wx.ALIGN_CENTER_VERTICAL)
+		sb_global.Add(bs_vol, 0, wx.EXPAND | wx.ALL, 5)
+
+		# Bind slider change event for live preview
+		self.scroll_audio.Bind(wx.EVT_SLIDER, self.on_volume_slider, self.slider_volume)
+
+		# --- Sub-row: Output Device ---
+		from .player import SoundManager
+		bs_dev = wx.BoxSizer(wx.HORIZONTAL)
+		lbl_dev = wx.StaticText(self.scroll_audio, label=_("Perangkat Output:"))
+		# Populate device choices
+		self._device_names = [""]  # "" means system default
+		device_labels = [_("Default Sistem")]
+		try:
+			for dev_id, dev_name in SoundManager.get_waveout_devices():
+				self._device_names.append(dev_name)
+				device_labels.append(dev_name)
+		except Exception:
+			pass
+		self.cmb_device = wx.Choice(self.scroll_audio, choices=device_labels)
+		# Pre-select saved device
+		saved_device = self.config.get_notification_device()
+		self._original_device = saved_device
+		try:
+			sel_idx = self._device_names.index(saved_device)
+		except ValueError:
+			sel_idx = 0  # Default
+		self.cmb_device.SetSelection(sel_idx)
+		bs_dev.Add(lbl_dev, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+		bs_dev.Add(self.cmb_device, 1, wx.EXPAND)
+		sb_global.Add(bs_dev, 0, wx.EXPAND | wx.ALL, 5)
+
+		# Bind device selection for live preview
+		self.scroll_audio.Bind(wx.EVT_CHOICE, self.on_device_changed, self.cmb_device)
+
+		self.sizer_scroll.Add(sb_global, 0, wx.EXPAND | wx.ALL, 5)
 
 		# Variants Container
 		self.variants_sizer = wx.BoxSizer(wx.VERTICAL)
@@ -284,6 +404,23 @@ class SettingsDialog(wx.Dialog):
 		
 		# Ensure layout is updated after lazy load
 		self.page_audio.Layout()
+
+	def on_volume_slider(self, event):
+		"""Update the volume label and config in-memory (live preview)."""
+		val = self.slider_volume.GetValue()
+		# Snap to nearest multiple of 5
+		snapped = round(val / 5) * 5
+		if snapped != val:
+			self.slider_volume.SetValue(snapped)
+			val = snapped
+		self.lbl_vol_val.SetLabel(f"{val}%")
+		self.config.data["notification_volume"] = val
+
+	def on_device_changed(self, event):
+		"""Update config in-memory when user selects a different output device (live preview)."""
+		sel = self.cmb_device.GetSelection()
+		if sel != wx.NOT_FOUND and hasattr(self, '_device_names'):
+			self.config.data["notification_device"] = self._device_names[sel]
 
 	def add_variant_row(self, sizer, label, key, category):
 		# Group Box for visual separation
@@ -666,6 +803,23 @@ class SettingsDialog(wx.Dialog):
 
 	def on_apply(self, event):
 		self._save_settings(show_confirmation=True, close_dialog=False)
+		# Update the restore-point so Cancel reverts to the last applied value
+		if hasattr(self, 'slider_volume') and self.slider_volume:
+			self._original_volume = self.slider_volume.GetValue()
+		if hasattr(self, 'cmb_device') and self.cmb_device:
+			sel = self.cmb_device.GetSelection()
+			if sel != wx.NOT_FOUND and hasattr(self, '_device_names'):
+				self._original_device = self._device_names[sel]
+
+	def on_cancel(self, event):
+		"""Restore the original volume and device in memory so they aren't changed if user cancels."""
+		if hasattr(self, '_original_volume'):
+			self.config.data["notification_volume"] = self._original_volume
+		if hasattr(self, '_original_device'):
+			self.config.data["notification_device"] = self._original_device
+		if self.player:
+			self.player.stop()
+		self.Destroy()
 
 	def on_save(self, event):
 		self._save_settings(show_confirmation=False, close_dialog=True)
@@ -698,10 +852,32 @@ class SettingsDialog(wx.Dialog):
 		# 1. Save Pre-Reminder Duration (Global)
 		if self.spin_pre_dur:
 			self.config.data["pre_reminder_minutes"] = self.spin_pre_dur.GetValue()
-			
-		# Save Hijri Adjustment
-		if self.spin_adj:
-			self.config.set_hijri_adjustment(self.spin_adj.GetValue())
+
+		# 2. Save Notification Volume (Global)
+		if hasattr(self, 'slider_volume') and self.slider_volume:
+			vol = self.slider_volume.GetValue()
+			snapped = round(vol / 5) * 5
+			self.config.set_notification_volume(snapped)
+
+		# 3. Save Output Device (Global)
+		if hasattr(self, 'cmb_device') and self.cmb_device:
+			sel = self.cmb_device.GetSelection()
+			if sel != wx.NOT_FOUND and hasattr(self, '_device_names'):
+				self.config.set_notification_device(self._device_names[sel])
+
+		# Save Hijri Adjustment (Dropdown)
+		if self.cmb_adj:
+			sel = self.cmb_adj.GetSelection()
+			if sel != wx.NOT_FOUND:
+				# Get the corresponding integer value from our mapping
+				adj_val = self.hijri_adj_options[sel][1]
+				self.config.set_hijri_adjustment(adj_val)
+
+		# Save Search Progress Mode
+		if hasattr(self, 'cmb_search_progress') and self.cmb_search_progress:
+			sel = self.cmb_search_progress.GetSelection()
+			if sel != wx.NOT_FOUND:
+				self.config.set_search_progress_mode(self.search_progress_modes[sel][1])
 
 		# Save Calculation Method
 		if self.cmb_calc:
@@ -785,3 +961,305 @@ class SettingsDialog(wx.Dialog):
 					if filename:
 						self.player.ensure_cached(filename, play_after=False)
 			threading.Thread(target=sync_cache_bg, daemon=True).start()
+
+
+class ZakatDialog(wx.Dialog):
+	"""Dialog for calculating various types of Zakat."""
+
+	ZAKAT_TYPES = [
+		_("Zakat Penghasilan"),
+		_("Zakat Maal (Harta/Tabungan)"),
+		_("Zakat Emas"),
+		_("Zakat Perak"),
+		_("Zakat Fitrah"),
+	]
+
+	def __init__(self, parent):
+		super().__init__(parent, title=_("Kalkulator Zakat"), style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
+
+		self._gold_price = None  # Will be fetched in background
+
+		sizer = wx.BoxSizer(wx.VERTICAL)
+
+		# --- Dropdown: Jenis Zakat ---
+		lbl_type = wx.StaticText(self, label=_("Jenis Zakat:"))
+		self.cmb_type = wx.Choice(self, choices=self.ZAKAT_TYPES)
+		self.cmb_type.SetSelection(0)
+		sizer.Add(lbl_type, 0, wx.ALL, 5)
+		sizer.Add(self.cmb_type, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 5)
+
+		# --- Dynamic Input Panel ---
+		self.input_panel = wx.Panel(self)
+		self.input_sizer = wx.BoxSizer(wx.VERTICAL)
+		self.input_panel.SetSizer(self.input_sizer)
+		sizer.Add(self.input_panel, 0, wx.EXPAND | wx.ALL, 5)
+
+		# --- Tombol Hitung ---
+		self.btn_calc = wx.Button(self, label=_("Hitung"))
+		sizer.Add(self.btn_calc, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 5)
+
+		# --- Hasil ---
+		lbl_result = wx.StaticText(self, label=_("Hasil:"))
+		self.txt_result = wx.TextCtrl(self, style=wx.TE_MULTILINE | wx.TE_READONLY, size=(-1, 150))
+		sizer.Add(lbl_result, 0, wx.ALL, 5)
+		sizer.Add(self.txt_result, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 5)
+
+		# --- Tombol Salin & Tutup ---
+		btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
+		self.btn_copy = wx.Button(self, label=_("Salin Hasil"))
+		self.btn_copy.Hide()
+		btn_close = wx.Button(self, wx.ID_CLOSE, label=_("Tutup"))
+		btn_sizer.Add(self.btn_copy, 0, wx.RIGHT, 5)
+		btn_sizer.Add(btn_close, 0)
+		sizer.Add(btn_sizer, 0, wx.ALIGN_RIGHT | wx.ALL, 5)
+
+		self.SetSizer(sizer)
+		self.SetSize(450, 450)
+		self.CentreOnParent()
+
+		# Bind events
+		self.cmb_type.Bind(wx.EVT_CHOICE, self.on_type_changed)
+		self.btn_calc.Bind(wx.EVT_BUTTON, self.on_calculate)
+		self.btn_copy.Bind(wx.EVT_BUTTON, self.on_copy)
+		btn_close.Bind(wx.EVT_BUTTON, self.on_close)
+		self.Bind(wx.EVT_CHAR_HOOK, self.on_key)
+
+		# Build initial inputs
+		self._input_fields = {}
+		self._build_inputs_for_type(0)
+
+		# Fetch gold price in background
+		self._fetch_gold_price_async()
+
+	def _fetch_gold_price_async(self):
+		"""Fetch gold price in a background thread."""
+		def _fetch():
+			from .zakat import fetch_gold_price
+			price = fetch_gold_price()
+			if price:
+				wx.CallAfter(self._on_gold_price_fetched, price)
+
+		threading.Thread(target=_fetch, daemon=True).start()
+
+	def _on_gold_price_fetched(self, price):
+		"""Called on main thread when gold price is available."""
+		try:
+			if not self:
+				return  # Dialog already destroyed
+		except RuntimeError:
+			return
+		self._gold_price = price
+		# Auto-fill gold price field if it exists and is empty
+		if "harga_emas" in self._input_fields:
+			try:
+				field = self._input_fields["harga_emas"]
+				if not field.GetValue():
+					field.SetValue(str(int(price)))
+			except (RuntimeError, wx.PyDeadObjectError):
+				pass
+
+	def _build_inputs_for_type(self, type_index):
+		"""Rebuild the input fields based on the selected zakat type."""
+		# Clear existing inputs
+		self.input_sizer.Clear(True)
+		self._input_fields = {}
+
+		if type_index == 0:  # Zakat Penghasilan
+			self._add_field("penghasilan", _("Penghasilan per bulan (Rp):"))
+			self._add_field("harga_emas", _("Harga emas per gram (Rp):"))
+		elif type_index == 1:  # Zakat Maal
+			self._add_field("total_harta", _("Total harta/tabungan (Rp):"))
+			self._add_field("harga_emas", _("Harga emas per gram (Rp):"))
+		elif type_index == 2:  # Zakat Emas
+			self._add_field("berat_emas", _("Berat emas yang dimiliki (gram):"))
+			self._add_field("harga_emas", _("Harga emas per gram (Rp):"))
+		elif type_index == 3:  # Zakat Perak
+			self._add_field("berat_perak", _("Berat perak yang dimiliki (gram):"))
+			self._add_field("harga_perak", _("Harga perak per gram (Rp):"))
+		elif type_index == 4:  # Zakat Fitrah
+			self._add_field("jumlah_jiwa", _("Jumlah jiwa:"))
+			self._add_field("harga_beras", _("Harga beras per kg (Rp):"))
+
+		# Auto-fill gold price if available
+		if self._gold_price and "harga_emas" in self._input_fields:
+			self._input_fields["harga_emas"].SetValue(str(int(self._gold_price)))
+
+		self.input_panel.Layout()
+		self.Layout()
+
+	def _add_field(self, key, label):
+		"""Add a labeled text input field to the input panel."""
+		lbl = wx.StaticText(self.input_panel, label=label)
+		txt = wx.TextCtrl(self.input_panel)
+		self.input_sizer.Add(lbl, 0, wx.TOP | wx.LEFT | wx.RIGHT, 3)
+		self.input_sizer.Add(txt, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 3)
+		self._input_fields[key] = txt
+
+	def _get_float(self, key):
+		"""Get a float value from input field, returns None if invalid."""
+		field = self._input_fields.get(key)
+		if not field:
+			return None
+		val = field.GetValue().strip().replace(".", "").replace(",", "")
+		try:
+			return float(val)
+		except (ValueError, TypeError):
+			return None
+
+	def on_type_changed(self, event):
+		"""Rebuild input fields when zakat type changes."""
+		sel = self.cmb_type.GetSelection()
+		if sel != wx.NOT_FOUND:
+			self._build_inputs_for_type(sel)
+
+	def on_calculate(self, event):
+		"""Perform the zakat calculation and display results."""
+		from .zakat import (
+			calc_zakat_penghasilan, calc_zakat_maal,
+			calc_zakat_gold, calc_zakat_silver,
+			calc_zakat_fitrah, format_rupiah,
+			NISAB_GOLD_GRAM
+		)
+
+		sel = self.cmb_type.GetSelection()
+		result_text = ""
+
+		try:
+			if sel == 0:  # Penghasilan
+				income = self._get_float("penghasilan")
+				gold = self._get_float("harga_emas")
+				if income is None or gold is None:
+					result_text = _("Mohon isi semua field dengan angka yang valid.")
+				else:
+					r = calc_zakat_penghasilan(income, gold)
+					if r["wajib"]:
+						result_text = (
+							f"{_('Status')}: {_('WAJIB ZAKAT')}\n"
+							f"{_('Penghasilan per tahun')}: {format_rupiah(r['yearly_income'])}\n"
+							f"{_('Nisab')} ({NISAB_GOLD_GRAM}g {_('emas')}): {format_rupiah(r['nisab_value'])}\n"
+							f"\n{_('Zakat per bulan')}: {format_rupiah(r['zakat_monthly'])}\n"
+							f"{_('Zakat per tahun')}: {format_rupiah(r['zakat_yearly'])}"
+						)
+					else:
+						result_text = (
+							f"{_('Status')}: {_('BELUM WAJIB ZAKAT')}\n"
+							f"{_('Penghasilan per tahun')}: {format_rupiah(r['yearly_income'])}\n"
+							f"{_('Nisab')} ({NISAB_GOLD_GRAM}g {_('emas')}): {format_rupiah(r['nisab_value'])}\n"
+							f"\n{_('Penghasilan Anda belum mencapai nisab.')}"
+						)
+
+			elif sel == 1:  # Maal
+				wealth = self._get_float("total_harta")
+				gold = self._get_float("harga_emas")
+				if wealth is None or gold is None:
+					result_text = _("Mohon isi semua field dengan angka yang valid.")
+				else:
+					r = calc_zakat_maal(wealth, gold)
+					if r["wajib"]:
+						result_text = (
+							f"{_('Status')}: {_('WAJIB ZAKAT')}\n"
+							f"{_('Total harta')}: {format_rupiah(r['total_wealth'])}\n"
+							f"{_('Nisab')} ({NISAB_GOLD_GRAM}g {_('emas')}): {format_rupiah(r['nisab_value'])}\n"
+							f"\n{_('Zakat yang harus dibayar')}: {format_rupiah(r['zakat'])}"
+						)
+					else:
+						result_text = (
+							f"{_('Status')}: {_('BELUM WAJIB ZAKAT')}\n"
+							f"{_('Total harta')}: {format_rupiah(r['total_wealth'])}\n"
+							f"{_('Nisab')} ({NISAB_GOLD_GRAM}g {_('emas')}): {format_rupiah(r['nisab_value'])}\n"
+							f"\n{_('Harta Anda belum mencapai nisab.')}"
+						)
+
+			elif sel == 2:  # Emas
+				weight = self._get_float("berat_emas")
+				gold = self._get_float("harga_emas")
+				if weight is None or gold is None:
+					result_text = _("Mohon isi semua field dengan angka yang valid.")
+				else:
+					r = calc_zakat_gold(weight, gold)
+					if r["wajib"]:
+						result_text = (
+							f"{_('Status')}: {_('WAJIB ZAKAT')}\n"
+							f"{_('Berat emas')}: {r['weight']:.1f} gram\n"
+							f"{_('Nilai emas')}: {format_rupiah(r['value'])}\n"
+							f"{_('Nisab')}: {r['nisab_gram']} gram\n"
+							f"\n{_('Zakat')}: {r['zakat_gram']:.2f} gram ({format_rupiah(r['zakat_value'])})"
+						)
+					else:
+						result_text = (
+							f"{_('Status')}: {_('BELUM WAJIB ZAKAT')}\n"
+							f"{_('Berat emas')}: {r['weight']:.1f} gram\n"
+							f"{_('Nisab')}: {r['nisab_gram']} gram\n"
+							f"\n{_('Emas Anda belum mencapai nisab.')}"
+						)
+
+			elif sel == 3:  # Perak
+				weight = self._get_float("berat_perak")
+				silver = self._get_float("harga_perak")
+				if weight is None or silver is None:
+					result_text = _("Mohon isi semua field dengan angka yang valid.")
+				else:
+					r = calc_zakat_silver(weight, silver)
+					if r["wajib"]:
+						result_text = (
+							f"{_('Status')}: {_('WAJIB ZAKAT')}\n"
+							f"{_('Berat perak')}: {r['weight']:.1f} gram\n"
+							f"{_('Nilai perak')}: {format_rupiah(r['value'])}\n"
+							f"{_('Nisab')}: {r['nisab_gram']} gram\n"
+							f"\n{_('Zakat')}: {r['zakat_gram']:.2f} gram ({format_rupiah(r['zakat_value'])})"
+						)
+					else:
+						result_text = (
+							f"{_('Status')}: {_('BELUM WAJIB ZAKAT')}\n"
+							f"{_('Berat perak')}: {r['weight']:.1f} gram\n"
+							f"{_('Nisab')}: {r['nisab_gram']} gram\n"
+							f"\n{_('Perak Anda belum mencapai nisab.')}"
+						)
+
+			elif sel == 4:  # Fitrah
+				people = self._get_float("jumlah_jiwa")
+				rice = self._get_float("harga_beras")
+				if people is None or rice is None:
+					result_text = _("Mohon isi semua field dengan angka yang valid.")
+				else:
+					r = calc_zakat_fitrah(int(people), rice)
+					result_text = (
+						f"{_('Jumlah jiwa')}: {r['num_people']}\n"
+						f"{_('Beras per jiwa')}: {r['kg_per_person']} kg\n"
+						f"\n{_('Total beras')}: {r['total_kg']:.1f} kg\n"
+						f"{_('Total uang')}: {format_rupiah(r['total_value'])}"
+					)
+
+		except Exception as e:
+			result_text = f"{_('Terjadi kesalahan')}: {e}"
+			logHandler.log.error(f"IslamicPedia: Zakat calculation error: {e}")
+
+		self.txt_result.SetValue(result_text)
+		# Show copy button and announce result via NVDA
+		if result_text:
+			self.btn_copy.Show()
+			self.Layout()
+		ui.message(result_text)
+
+	def on_copy(self, event):
+		"""Copy result text to clipboard."""
+		result = self.txt_result.GetValue()
+		if result:
+			if wx.TheClipboard.Open():
+				wx.TheClipboard.SetData(wx.TextDataObject(result))
+				wx.TheClipboard.Close()
+				ui.message(_("Hasil berhasil disalin ke clipboard."))
+			else:
+				ui.message(_("Gagal menyalin ke clipboard."))
+		else:
+			ui.message(_("Belum ada hasil untuk disalin."))
+
+	def on_key(self, event):
+		"""Handle Escape key to close dialog."""
+		if event.GetKeyCode() == wx.WXK_ESCAPE:
+			self.EndModal(wx.ID_CLOSE)
+		else:
+			event.Skip()
+
+	def on_close(self, event):
+		self.EndModal(wx.ID_CLOSE)

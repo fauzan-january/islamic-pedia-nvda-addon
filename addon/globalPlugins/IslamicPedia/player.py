@@ -25,6 +25,9 @@ class SoundManager:
 		
 		# Set tracking for concurrent downloads
 		self.downloading_files = set()
+
+		# Track active waveOutOpen handle for alarm audio (allows stop() to interrupt)
+		self._alarm_wav_handle = None
 		
 		if not os.path.exists(self.cache_dir):
 			os.makedirs(self.cache_dir)
@@ -206,40 +209,275 @@ class SoundManager:
 		return False
 
 	def _play_file(self, path):
+		"""Play a notification alarm audio file.
+		WAV files use WinMM waveOutOpen (supports device selection + volume).
+		MP3 files use MCI (supports volume only, always default device).
+		"""
+		if self.shutdown_flag: return
+		if not os.path.exists(path): return
+		ext = os.path.splitext(path)[1].lower()
+		if ext == ".mp3":
+			try:
+				self._play_alarm_mci(path)
+			except Exception as e:
+				logHandler.log.error(f"IslamicPedia: MCI alarm failed: {e}")
+		else:
+			try:
+				self._play_alarm_waveout(path)
+			except Exception as e:
+				logHandler.log.error(f"IslamicPedia: waveOutOpen alarm failed, trying MCI: {e}")
+				try:
+					self._play_alarm_mci(path)
+				except Exception as e2:
+					logHandler.log.error(f"IslamicPedia: MCI fallback alarm also failed: {e2}")
+
+	@staticmethod
+	def get_waveout_devices():
+		"""Enumerate WinMM audio output devices.
+		Returns list of (device_id, device_name) tuples.
+		device_id -1 = WAVE_MAPPER (system default).
+		"""
+		import ctypes
+		MAXPNAMELEN = 32
+
+		class WAVEOUTCAPSW(ctypes.Structure):
+			_fields_ = [
+				('wMid',           ctypes.c_ushort),
+				('wPid',           ctypes.c_ushort),
+				('vDriverVersion', ctypes.c_uint),
+				('szPname',        ctypes.c_wchar * MAXPNAMELEN),
+				('dwFormats',      ctypes.c_uint),
+				('wChannels',      ctypes.c_ushort),
+				('wReserved1',     ctypes.c_ushort),
+				('dwSupport',      ctypes.c_uint),
+			]
+
+		winmm = ctypes.windll.winmm
+		devices = []
 		try:
-			if self.shutdown_flag: return
-			if not os.path.exists(path): return
-			
-			logHandler.log.info(f"IslamicPedia: Playing {path} using winsound (Async)")
-			import winsound
-			# SND_FILENAME | SND_ASYNC | SND_NODEFAULT
-			# 0x00020000 | 0x0001 | 0x0002
-			# Play Async so it doesn't block NVDA, and doesn't use NVDA's wave player channel
-			winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
+			num = winmm.waveOutGetNumDevs()
+			for i in range(num):
+				caps = WAVEOUTCAPSW()
+				ret = winmm.waveOutGetDevCapsW(i, ctypes.byref(caps), ctypes.sizeof(caps))
+				if ret == 0:  # MMSYSERR_NOERROR
+					devices.append((i, caps.szPname))
 		except Exception as e:
-			logHandler.log.error(f"IslamicPedia: Error playing file {path}: {e}")
+			logHandler.log.error(f"IslamicPedia: waveOutGetDevCaps error: {e}")
+		return devices
+
+	def _get_waveout_device_id(self):
+		"""Resolve user's preferred device name to a WinMM device ID.
+		Returns WAVE_MAPPER constant (0xFFFFFFFF) if device not found or not set.
+		"""
+		WAVE_MAPPER = 0xFFFFFFFF
+		device_name = self.config.get_notification_device()
+		if not device_name:
+			return WAVE_MAPPER
+		for dev_id, dev_name in self.get_waveout_devices():
+			if dev_name == device_name:
+				return dev_id
+		logHandler.log.warning(f"IslamicPedia: Device '{device_name}' not found, using WAVE_MAPPER")
+		return WAVE_MAPPER
+
+	def _play_alarm_waveout(self, path):
+		"""Play WAV alarm via WinMM waveOutOpen.
+		Supports output device selection and volume control.
+		Falls back to WAVE_MAPPER (system default) if preferred device not available.
+		Runs audio playback in a daemon background thread so NVDA is not blocked.
+		"""
+		import ctypes
+		import wave as wav_module
+		import time
+
+		# --- Read WAV file ---
+		try:
+			with wav_module.open(path, 'rb') as wf:
+				n_channels      = wf.getnchannels()
+				n_samples_sec   = wf.getframerate()
+				bits_per_sample = wf.getsampwidth() * 8
+				audio_data      = wf.readframes(wf.getnframes())
+		except Exception as e:
+			logHandler.log.error(f"IslamicPedia: Cannot read WAV '{path}': {e}")
+			raise
+
+		# --- WAVEFORMATEX ---
+		class WAVEFORMATEX(ctypes.Structure):
+			_fields_ = [
+				('wFormatTag',      ctypes.c_ushort),
+				('nChannels',       ctypes.c_ushort),
+				('nSamplesPerSec',  ctypes.c_uint),
+				('nAvgBytesPerSec', ctypes.c_uint),
+				('nBlockAlign',     ctypes.c_ushort),
+				('wBitsPerSample',  ctypes.c_ushort),
+				('cbSize',          ctypes.c_ushort),
+			]
+
+		wfx = WAVEFORMATEX()
+		wfx.wFormatTag      = 1  # WAVE_FORMAT_PCM
+		wfx.nChannels       = n_channels
+		wfx.nSamplesPerSec  = n_samples_sec
+		wfx.wBitsPerSample  = bits_per_sample
+		wfx.nBlockAlign     = n_channels * (bits_per_sample // 8)
+		wfx.nAvgBytesPerSec = n_samples_sec * wfx.nBlockAlign
+		wfx.cbSize          = 0
+
+		# --- WAVEHDR ---
+		class WAVEHDR(ctypes.Structure):
+			_fields_ = [
+				('lpData',          ctypes.c_char_p),
+				('dwBufferLength',  ctypes.c_uint),
+				('dwBytesRecorded', ctypes.c_uint),
+				('dwUser',          ctypes.c_void_p),
+				('dwFlags',         ctypes.c_uint),
+				('dwLoops',         ctypes.c_uint),
+				('lpNext',          ctypes.c_void_p),
+				('reserved',        ctypes.c_void_p),
+			]
+
+		winmm       = ctypes.windll.winmm
+		WAVE_MAPPER = ctypes.c_uint(0xFFFFFFFF)
+		CALLBACK_NULL = 0
+
+		# --- Resolve device ---
+		dev_id_raw = self._get_waveout_device_id()
+		if dev_id_raw == 0xFFFFFFFF:
+			dev_id = WAVE_MAPPER
+		else:
+			dev_id = ctypes.c_uint(dev_id_raw)
+
+		# --- Open device ---
+		hWave = ctypes.c_void_p(0)
+		ret = winmm.waveOutOpen(
+			ctypes.byref(hWave), dev_id, ctypes.byref(wfx),
+			0, 0, CALLBACK_NULL
+		)
+		if ret != 0:
+			# Fallback to system default
+			logHandler.log.warning(f"IslamicPedia: waveOutOpen dev {dev_id_raw} failed ({ret}), falling back to WAVE_MAPPER")
+			ret = winmm.waveOutOpen(
+				ctypes.byref(hWave), WAVE_MAPPER, ctypes.byref(wfx),
+				0, 0, CALLBACK_NULL
+			)
+			if ret != 0:
+				raise RuntimeError(f"IslamicPedia: waveOutOpen WAVE_MAPPER failed: MMSYSERR {ret}")
+
+		# Record handle so stop() can interrupt
+		self._alarm_wav_handle = hWave
+
+		# --- Set volume ---
+		vol      = self.config.get_notification_volume()  # 0-100
+		wm_vol   = int(vol * 0xFFFF / 100)
+		vol_dword = (wm_vol << 16) | wm_vol  # Both L+R channels
+		winmm.waveOutSetVolume(hWave, vol_dword)
+
+		# --- Play in background thread ---
+		def _do_play():
+			try:
+				# Keep audio buffer alive in this thread scope
+				audio_buf = ctypes.create_string_buffer(audio_data)
+
+				hdr = WAVEHDR()
+				hdr.lpData         = ctypes.cast(audio_buf, ctypes.c_char_p)
+				hdr.dwBufferLength = len(audio_data)
+				hdr.dwFlags        = 0
+				hdr.dwLoops        = 1
+
+				winmm.waveOutPrepareHeader(hWave, ctypes.byref(hdr), ctypes.sizeof(hdr))
+				winmm.waveOutWrite(hWave, ctypes.byref(hdr), ctypes.sizeof(hdr))
+
+				WHDR_DONE = 0x00000001
+				while not (hdr.dwFlags & WHDR_DONE):
+					if self.shutdown_flag:
+						winmm.waveOutReset(hWave)
+						break
+					time.sleep(0.1)
+
+				winmm.waveOutUnprepareHeader(hWave, ctypes.byref(hdr), ctypes.sizeof(hdr))
+			except Exception as e:
+				logHandler.log.error(f"IslamicPedia: waveOutOpen playback error: {e}")
+			finally:
+				try:
+					winmm.waveOutClose(hWave)
+				except Exception:
+					pass
+				self._alarm_wav_handle = None
+
+		logHandler.log.info(f"IslamicPedia: waveOutOpen alarm playing '{path}' at volume {vol}%")
+		threading.Thread(target=_do_play, daemon=True).start()
+
+
+	def _play_alarm_mci(self, path):
+		"""Play notification alarm audio through MCI with volume control.
+		Uses an independent alias 'islamic_pedia_alarm' that does not conflict with the SFX alias.
+		MCI volume scale is 0-1000, so we multiply the user's 0-100 value by 10.
+		"""
+		import ctypes
+		mci = ctypes.windll.winmm.mciSendStringW
+		alias = "islamic_pedia_alarm"
+
+		# 1. Close any previously playing alarm
+		mci(f"close {alias}", None, 0, 0)
+
+		# 2. Determine device type (waveaudio for .wav, mpegvideo for .mp3)
+		ext = os.path.splitext(path)[1].lower()
+		if ext == ".mp3":
+			device_type = "mpegvideo"
+		else:
+			device_type = "waveaudio"
+
+		# 3. Open the file
+		cmd_open = f'open "{path}" type {device_type} alias {alias}'
+		ret = mci(cmd_open, None, 0, 0)
+		if ret != 0:
+			# Retry once
+			mci(f"close {alias}", None, 0, 0)
+			ret = mci(cmd_open, None, 0, 0)
+			if ret != 0:
+				raise RuntimeError(f"MCI open failed with code {ret}")
+
+		# 4. Set volume from config (MCI scale 0-1000)
+		vol = self.config.get_notification_volume()   # 0-100
+		mci_vol = max(0, min(1000, vol * 10))
+		mci(f"setaudio {alias} volume to {mci_vol}", None, 0, 0)
+
+		# 5. Play asynchronously
+		logHandler.log.info(f"IslamicPedia: MCI alarm playing '{path}' at volume {vol}%")
+		mci(f"play {alias}", None, 0, 0)
+
 
 	def stop(self):
 		# Force clear download queue tracking
 		self.downloading_files.clear()
 		try:
-			"""Hentikan audio yang sedang berjalan dengan aman."""
-			import winsound
-			# Stop winsound (SND_PURGE = 0x0040)
-			winsound.PlaySound(None, winsound.SND_PURGE)
-			
+			# Stop active waveOutOpen alarm (WAV playback on specific device)
 			try:
-				# Cleanup legacy just in case
+				import ctypes
+				if self._alarm_wav_handle is not None:
+					ctypes.windll.winmm.waveOutReset(self._alarm_wav_handle)
+					# _alarm_wav_handle will be cleared by the background thread's finally block
+			except Exception:
+				pass
+
+			# Stop winsound fallback if active
+			try:
+				import winsound
+				winsound.PlaySound(None, winsound.SND_PURGE)
+			except Exception:
+				pass
+
+			try:
+				# Cleanup legacy nvwave just in case
 				if hasattr(nvwave, "fileWavePlayer") and nvwave.fileWavePlayer:
 					nvwave.fileWavePlayer.stop()
 				nvwave.playWaveFile(None)
 			except Exception:
 				pass
 
-			# Stop MCI SFX
+			# Stop MCI channels (alarm MCI for MP3, sfx for effects)
 			import ctypes
 			mci = ctypes.windll.winmm.mciSendStringW
 			mci("close islamic_pedia_sfx", None, 0, 0)
+			mci("close islamic_pedia_alarm", None, 0, 0)
 		except Exception as e:
 			logHandler.log.error(f"IslamicPedia: Error stopping audio: {e}")
 

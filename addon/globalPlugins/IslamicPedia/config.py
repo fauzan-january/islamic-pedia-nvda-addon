@@ -37,6 +37,9 @@ class Config:
 			},
 			"audio_source": "online",    # online, offline
 			"hijri_adjustment": 0,       # Hijri date adjustment (-2 to +2)
+			"search_progress_mode": "beep", # Search progress indicator mode (off, speech, beep, both)
+			"notification_volume": 50,      # Global notification volume (0-100)
+			"notification_device": "",       # Output device name (empty = system default)
 			"pre_reminder_minutes": 10,
 			"pre_reminder_states": {     # Default enabled for all
 				"Subuh": True,
@@ -157,4 +160,25 @@ class Config:
 
 	def set_hijri_adjustment(self, val):
 		self.data["hijri_adjustment"] = int(val)
+		self.save()
+
+	def get_search_progress_mode(self):
+		return self.data.get("search_progress_mode", "beep")
+
+	def set_search_progress_mode(self, val):
+		self.data["search_progress_mode"] = str(val)
+		self.save()
+
+	def get_notification_volume(self):
+		return int(self.data.get("notification_volume", 50))
+
+	def set_notification_volume(self, vol):
+		self.data["notification_volume"] = int(vol)
+		self.save()
+
+	def get_notification_device(self):
+		return self.data.get("notification_device", "")
+
+	def set_notification_device(self, device_name):
+		self.data["notification_device"] = str(device_name)
 		self.save()
