@@ -25,6 +25,7 @@ class SoundManager:
 		
 		# Set tracking for concurrent downloads
 		self.downloading_files = set()
+		self._play_token = 0 # Tracks current play request to prevent cancelled sounds from playing
 
 		# Track active waveOutOpen handle for alarm audio (allows stop() to interrupt)
 		self._alarm_wav_handle = None
@@ -174,47 +175,61 @@ class SoundManager:
 	def ensure_cached(self, filename, play_after=False):
 		if not filename or self.shutdown_flag: return
 		
+		# Give this request a token if it wants to play
+		current_token = 0
+		if play_after:
+			self._play_token += 1
+			current_token = self._play_token
+		
 		local_path = os.path.join(self.cache_dir, filename)
 		if os.path.exists(local_path):
-			if play_after: self._play_file(local_path)
+			if play_after: self._play_file(local_path, current_token)
 			return
 
 		if filename not in self.downloading_files:
 			self.downloading_files.add(filename)
-			threading.Thread(target=self._download_and_play, args=(filename, local_path, play_after), daemon=True).start()
+			threading.Thread(target=self._download_and_play, args=(filename, local_path, play_after, current_token), daemon=True).start()
 
 
 	def preview(self, filename):
 		if self.shutdown_flag: return False
-		
 		if not filename: return False
+		
+		self._play_token += 1
+		current_token = self._play_token
 		
 		# 1. Persistent Cache
 		cached_path = os.path.join(self.cache_dir, filename)
 		if os.path.exists(cached_path):
-			self._play_file(cached_path)
+			self._play_file(cached_path, current_token)
 			return True
 			
 		# 2. Temp Cache
 		temp_path = os.path.join(self.temp_dir, filename)
 		if os.path.exists(temp_path):
-			self._play_file(temp_path)
+			self._play_file(temp_path, current_token)
 			return True
 		
 		# 3. Download to Temp
-		# Create thread to download
 		if filename not in self.downloading_files:
 			self.downloading_files.add(filename)
-			threading.Thread(target=self._download_and_play, args=(filename, temp_path, True), daemon=True).start()
+			threading.Thread(target=self._download_and_play, args=(filename, temp_path, True, current_token), daemon=True).start()
 		return False
 
-	def _play_file(self, path):
+	def _play_file(self, path, token=None):
 		"""Play a notification alarm audio file.
 		WAV files use WinMM waveOutOpen (supports device selection + volume).
 		MP3 files use MCI (supports volume only, always default device).
 		"""
 		if self.shutdown_flag: return
 		if not os.path.exists(path): return
+		
+		# If a token was provided and it no longer matches the latest request (i.e., user stopped), cancel playback
+		if token is not None and token != self._play_token:
+			return
+		
+		self.stop() # Ensure previous playback is stopped
+
 		ext = os.path.splitext(path)[1].lower()
 		if ext == ".mp3":
 			try:
@@ -446,7 +461,8 @@ class SoundManager:
 
 
 	def stop(self):
-		# Force clear download queue tracking
+		# Force clear download queue tracking and invalidate pending play requests
+		self._play_token += 1
 		self.downloading_files.clear()
 		try:
 			# Stop active waveOutOpen alarm (WAV playback on specific device)
@@ -495,7 +511,7 @@ class SoundManager:
 		# Best approach: nvwave doesn't support status check.
 		return False
 
-	def _download_and_play(self, filename, local_path, play_after=False):
+	def _download_and_play(self, filename, local_path, play_after=False, token=None):
 		if self.shutdown_flag:
 			self.downloading_files.discard(filename)
 			return
@@ -533,17 +549,21 @@ class SoundManager:
 			
 			if play_after and not self.shutdown_flag:
 				try:
-					wx.CallAfter(self._play_file, local_path)
+					wx.CallAfter(self._play_file, local_path, token)
 				except Exception:
 					pass
 		except Exception as e:
 			logHandler.log.error(f"IslamicPedia: Download failed for {url}: {e}")
 			if play_after and not self.shutdown_flag:
-				try:
-					# Translators: Error downloading audio. {e} is the error message.
-					msg = _("Gagal mengunduh data audio: {e}").format(e=e)
-					wx.CallAfter(gui.messageBox, msg, _("Kesalahan"), wx.OK | wx.ICON_ERROR)
-				except Exception:
+				# Cancel error prompt if token has expired
+				if token is not None and token != self._play_token:
 					pass
+				else:
+					try:
+						# Translators: Error downloading audio. {e} is the error message.
+						msg = _("Gagal mengunduh data audio: {e}").format(e=e)
+						wx.CallAfter(gui.messageBox, msg, _("Kesalahan"), wx.OK | wx.ICON_ERROR)
+					except Exception:
+						pass
 		finally:
 			self.downloading_files.discard(filename)
