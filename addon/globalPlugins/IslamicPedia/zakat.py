@@ -53,24 +53,39 @@ def _fetch_from_harga_emas_org(headers):
 		req = urllib.request.Request(url, headers=headers)
 		with urllib.request.urlopen(req, timeout=15) as response:
 			html = response.read().decode('utf-8')
-			# Cari harga emas Antam 1 gram (beli)
-			# Format di website: harga dalam format "3.147.000" atau "2.917.000"
-			# Cari pola angka Rupiah di sekitar text "1" gram pada tabel Antam
-			# Tabel format: berat | harga beli | harga jual
 			
-			# Pattern: cari semua angka format Rupiah (x.xxx.xxx)
-			prices = re.findall(r'(\d{1,3}(?:\.\d{3})+)', html)
-			
-			if prices:
-				# Cari harga yang masuk rentang harga emas 1 gram (2-5 juta)
-				for price_str in prices:
-					price_val = int(price_str.replace('.', ''))
-					if 2_000_000 <= price_val <= 5_000_000:
-						logHandler.log.info(
-							f"IslamicPedia: Harga emas Indonesia (harga-emas.org): "
-							f"Rp {price_val:,}/gram"
-						)
-						return float(price_val)
+			import json
+			# Cari dari JSON-LD Web Schema (Paling akurat & format numerik asli)
+			json_ld_blocks = re.findall(r'<script type=[\'\"]application/ld\+json[\'\"]>(.*?)</script>', html, re.IGNORECASE | re.DOTALL)
+			for block in json_ld_blocks:
+				try:
+					data = json.loads(block)
+					if data.get('@type') == 'Product' and 'offers' in data:
+						price_val = data['offers'].get('price')
+						if price_val and 1_000_000 <= int(float(price_val)) <= 5_000_000:
+							logHandler.log.info(
+								f"IslamicPedia: Harga emas Indonesia (JSON-LD harga-emas.org): "
+								f"Rp {int(float(price_val)):,}/gram"
+							)
+							return float(price_val)
+				except:
+					pass
+
+			# Fallback 1: Jika tidak ada JSON-LD, cari spesifik baris 1 gram Antam
+			# Hanya mengambil angka format Rupiah setelah menyebut "Emas 1 Gram" / baris "1"
+			# Menghindari terbacanya "Spot", tanggal, atau emas kelipatan besar.
+			matches = re.search(r'Emas\s*1\s*Gram.*?(\d{1,3}(?:\.\d{3})+)', html, re.IGNORECASE | re.DOTALL)
+			if not matches:
+				matches = re.search(r'>\s*1\s*<[^>]{0,100}?>\s*(\d{1,3}(?:\.\d{3})+)', html, re.IGNORECASE | re.DOTALL)
+
+			if matches:
+				price_val = int(matches.group(1).replace('.', ''))
+				if 1_000_000 <= price_val <= 5_000_000:
+					logHandler.log.info(
+						f"IslamicPedia: Harga emas Indonesia (Regex harga-emas.org): "
+						f"Rp {price_val:,}/gram"
+					)
+					return float(price_val)
 	except Exception as e:
 		logHandler.log.warning(f"IslamicPedia: Failed to scrape harga-emas.org: {e}")
 	return None

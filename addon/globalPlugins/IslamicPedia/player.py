@@ -4,6 +4,7 @@ import logHandler
 import urllib.request
 import threading
 import wx
+import ui
 import gui
 import nvwave
 
@@ -24,11 +25,15 @@ class SoundManager:
 		self.data = self._load_variants()
 		
 		# Set tracking for concurrent downloads
-		self.downloading_files = set()
-		self._play_token = 0 # Tracks current play request to prevent cancelled sounds from playing
+		self.downloading_files = {}
+		self._play_token_main = 0 # Tracks current main alarm requests
+		self._play_token_preview = 0 # Tracks current preview requests
 
 		# Track active waveOutOpen handle for alarm audio (allows stop() to interrupt)
 		self._alarm_wav_handle = None
+		self._preview_wav_handle = None
+		self._alarm_wmp_handle = None
+		self._preview_wmp_handle = None
 		
 		if not os.path.exists(self.cache_dir):
 			os.makedirs(self.cache_dir)
@@ -64,8 +69,8 @@ class SoundManager:
 	def smart_cleanup(self):
 		if self.shutdown_flag: return
 		
-		# 1. Stop audio
-		self.stop()
+		# 1. Stop preview audio (Do not stop main alarm)
+		self.stop_preview()
 		
 		# 2. Clean Temp Directory
 		self._clean_temp()
@@ -178,8 +183,8 @@ class SoundManager:
 		# Give this request a token if it wants to play
 		current_token = 0
 		if play_after:
-			self._play_token += 1
-			current_token = self._play_token
+			self._play_token_main += 1
+			current_token = self._play_token_main
 		
 		local_path = os.path.join(self.cache_dir, filename)
 		if os.path.exists(local_path):
@@ -187,37 +192,43 @@ class SoundManager:
 			return
 
 		if filename not in self.downloading_files:
-			self.downloading_files.add(filename)
+			self.downloading_files[filename] = current_token
 			threading.Thread(target=self._download_and_play, args=(filename, local_path, play_after, current_token), daemon=True).start()
+		elif play_after:
+			self.downloading_files[filename] = current_token
 
 
 	def preview(self, filename):
 		if self.shutdown_flag: return False
 		if not filename: return False
 		
-		self._play_token += 1
-		current_token = self._play_token
+		self._play_token_preview += 1
+		current_token = self._play_token_preview
 		
 		# 1. Persistent Cache
 		cached_path = os.path.join(self.cache_dir, filename)
 		if os.path.exists(cached_path):
-			self._play_file(cached_path, current_token)
+			self._play_file(cached_path, current_token, is_preview=True)
 			return True
 			
 		# 2. Temp Cache
 		temp_path = os.path.join(self.temp_dir, filename)
 		if os.path.exists(temp_path):
-			self._play_file(temp_path, current_token)
+			self._play_file(temp_path, current_token, is_preview=True)
 			return True
 		
-		# 3. Download to Temp
+		# 3. Download to Temp (downloads same queue, playback flagged as preview)
 		if filename not in self.downloading_files:
-			self.downloading_files.add(filename)
-			threading.Thread(target=self._download_and_play, args=(filename, temp_path, True, current_token), daemon=True).start()
+			self.downloading_files[filename] = current_token
+			import threading
+			threading.Thread(target=self._download_and_play, args=(filename, temp_path, True, current_token, True), daemon=True).start()
+		else:
+			# Update token so that if user mashed play/stop, the final completion will match the latest token
+			self.downloading_files[filename] = current_token
 		return False
 
-	def _play_file(self, path, token=None):
-		"""Play a notification alarm audio file.
+	def _play_file(self, path, token=None, is_preview=False):
+		"""Play a notification alarm audio file or preview.
 		WAV files use WinMM waveOutOpen (supports device selection + volume).
 		MP3 files use MCI (supports volume only, always default device).
 		"""
@@ -225,24 +236,29 @@ class SoundManager:
 		if not os.path.exists(path): return
 		
 		# If a token was provided and it no longer matches the latest request (i.e., user stopped), cancel playback
-		if token is not None and token != self._play_token:
-			return
+		if token is not None:
+			target_token = self._play_token_preview if is_preview else self._play_token_main
+			if token != target_token:
+				return
 		
-		self.stop() # Ensure previous playback is stopped
+		if is_preview:
+			self.stop_preview() # Only stop current preview
+		else:
+			self.stop_main() # Only stop main alarm
 
 		ext = os.path.splitext(path)[1].lower()
 		if ext == ".mp3":
 			try:
-				self._play_alarm_mci(path)
+				self._play_alarm_mci(path, is_preview)
 			except Exception as e:
 				logHandler.log.error(f"IslamicPedia: MCI alarm failed: {e}")
 		else:
 			try:
-				self._play_alarm_waveout(path)
+				self._play_alarm_waveout(path, is_preview)
 			except Exception as e:
 				logHandler.log.error(f"IslamicPedia: waveOutOpen alarm failed, trying MCI: {e}")
 				try:
-					self._play_alarm_mci(path)
+					self._play_alarm_mci(path, is_preview)
 				except Exception as e2:
 					logHandler.log.error(f"IslamicPedia: MCI fallback alarm also failed: {e2}")
 
@@ -294,7 +310,7 @@ class SoundManager:
 		logHandler.log.warning(f"IslamicPedia: Device '{device_name}' not found, using WAVE_MAPPER")
 		return WAVE_MAPPER
 
-	def _play_alarm_waveout(self, path):
+	def _play_alarm_waveout(self, path, is_preview=False):
 		"""Play WAV alarm via WinMM waveOutOpen.
 		Supports output device selection and volume control.
 		Falls back to WAVE_MAPPER (system default) if preferred device not available.
@@ -337,16 +353,19 @@ class SoundManager:
 		wfx.cbSize          = 0
 
 		# --- WAVEHDR ---
+		# dwUser and reserved are DWORD_PTR in the Windows API (pointer-sized integer).
+		# Using c_size_t is semantically correct and safe on both 32-bit and 64-bit:
+		# c_size_t = 4 bytes on 32-bit, 8 bytes on 64-bit (same as DWORD_PTR / NVDA 2026.1 64-bit).
 		class WAVEHDR(ctypes.Structure):
 			_fields_ = [
 				('lpData',          ctypes.c_char_p),
 				('dwBufferLength',  ctypes.c_uint),
 				('dwBytesRecorded', ctypes.c_uint),
-				('dwUser',          ctypes.c_void_p),
+				('dwUser',          ctypes.c_size_t),   # DWORD_PTR: pointer-sized int
 				('dwFlags',         ctypes.c_uint),
 				('dwLoops',         ctypes.c_uint),
-				('lpNext',          ctypes.c_void_p),
-				('reserved',        ctypes.c_void_p),
+				('lpNext',          ctypes.c_void_p),   # struct WAVEHDR*: pointer
+				('reserved',        ctypes.c_size_t),   # DWORD_PTR: pointer-sized int
 			]
 
 		winmm       = ctypes.windll.winmm
@@ -377,7 +396,10 @@ class SoundManager:
 				raise RuntimeError(f"IslamicPedia: waveOutOpen WAVE_MAPPER failed: MMSYSERR {ret}")
 
 		# Record handle so stop() can interrupt
-		self._alarm_wav_handle = hWave
+		if is_preview:
+			self._preview_wav_handle = hWave
+		else:
+			self._alarm_wav_handle = hWave
 
 		# --- Set volume ---
 		vol      = self.config.get_notification_volume()  # 0-100
@@ -415,20 +437,62 @@ class SoundManager:
 					winmm.waveOutClose(hWave)
 				except Exception:
 					pass
-				self._alarm_wav_handle = None
+				
+				if is_preview:
+					self._preview_wav_handle = None
+				else:
+					self._alarm_wav_handle = None
 
 		logHandler.log.info(f"IslamicPedia: waveOutOpen alarm playing '{path}' at volume {vol}%")
+		import threading
 		threading.Thread(target=_do_play, daemon=True).start()
 
 
-	def _play_alarm_mci(self, path):
-		"""Play notification alarm audio through MCI with volume control.
-		Uses an independent alias 'islamic_pedia_alarm' that does not conflict with the SFX alias.
-		MCI volume scale is 0-1000, so we multiply the user's 0-100 value by 10.
+	def _play_alarm_mci(self, path, is_preview=False):
+		"""Play notification alarm audio with volume control.
+		Prioritizes WMP COM object for independent volume control (protects NVDA app volume).
+		Falls back to MCI if WMP is unavailable.
 		"""
+		vol = self.config.get_notification_volume()   # 0-100
+		
+		try:
+			import comtypes.client
+			wmp = comtypes.client.CreateObject("WMPlayer.OCX")
+			
+			# Wait for WMP to transition states before cementing volume change
+			wmp.URL = path
+			wmp.settings.volume = max(0, min(100, vol))
+			wmp.controls.play()
+			
+			if is_preview:
+				self._preview_wmp_handle = wmp
+			else:
+				self._alarm_wmp_handle = wmp
+			
+			logHandler.log.info(f"IslamicPedia: WMP alarm playing '{path}' at volume {vol}%")
+			
+			# Force volume refresh after 200ms to bypass WMP internal state resets
+			import wx
+			def _force_vol():
+				try:
+					if is_preview:
+						if getattr(self, "_preview_wmp_handle", None) == wmp:
+							wmp.settings.volume = max(0, min(100, self.config.get_notification_volume()))
+					else:
+						if getattr(self, "_alarm_wmp_handle", None) == wmp:
+							wmp.settings.volume = max(0, min(100, self.config.get_notification_volume()))
+				except Exception:
+					pass
+			wx.CallLater(200, _force_vol)
+			wx.CallLater(500, _force_vol)
+			
+			return
+		except Exception as e:
+			logHandler.log.warning(f"IslamicPedia: WMP COM fallback failed ({e}), using MCI")
+
 		import ctypes
 		mci = ctypes.windll.winmm.mciSendStringW
-		alias = "islamic_pedia_alarm"
+		alias = "islamic_pedia_preview" if is_preview else "islamic_pedia_alarm"
 
 		# 1. Close any previously playing alarm
 		mci(f"close {alias}", None, 0, 0)
@@ -451,6 +515,12 @@ class SoundManager:
 				raise RuntimeError(f"MCI open failed with code {ret}")
 
 		# 4. Set volume from config (MCI scale 0-1000)
+		# While MCI volume can impact the master app session volume, we fallback to it
+		# just in case WMP COM fails, so the user at least gets volume control.
+		mci_vol = max(0, min(1000, vol * 10))
+		mci(f"setaudio {alias} volume to {mci_vol}", None, 0, 0)
+
+		# 4. Set volume from config (MCI scale 0-1000)
 		vol = self.config.get_notification_volume()   # 0-100
 		mci_vol = max(0, min(1000, vol * 10))
 		mci(f"setaudio {alias} volume to {mci_vol}", None, 0, 0)
@@ -461,67 +531,124 @@ class SoundManager:
 
 
 	def stop(self):
-		# Force clear download queue tracking and invalidate pending play requests
-		self._play_token += 1
+		"""Stops all background audio (Main Adzan, Preview, Downloads)."""
+		self._play_token_main += 1
+		self._play_token_preview += 1
 		self.downloading_files.clear()
+		self.stop_main()
+		self.stop_preview()
+		
+		# Stop SFX
 		try:
-			# Stop active waveOutOpen alarm (WAV playback on specific device)
-			try:
-				import ctypes
-				if self._alarm_wav_handle is not None:
-					ctypes.windll.winmm.waveOutReset(self._alarm_wav_handle)
-					# _alarm_wav_handle will be cleared by the background thread's finally block
-			except Exception:
-				pass
-
-			# Stop winsound fallback if active
-			try:
-				import winsound
-				winsound.PlaySound(None, winsound.SND_PURGE)
-			except Exception:
-				pass
-
-			try:
-				# Cleanup legacy nvwave just in case
-				if hasattr(nvwave, "fileWavePlayer") and nvwave.fileWavePlayer:
-					nvwave.fileWavePlayer.stop()
-				nvwave.playWaveFile(None)
-			except Exception:
-				pass
-
-			# Stop MCI channels (alarm MCI for MP3, sfx for effects)
 			import ctypes
 			mci = ctypes.windll.winmm.mciSendStringW
 			mci("close islamic_pedia_sfx", None, 0, 0)
+		except Exception:
+			pass
+
+	def stop_main(self):
+		"""Stops only the main Adzan background audio."""
+		try:
+			import ctypes
+			mci = ctypes.windll.winmm.mciSendStringW
 			mci("close islamic_pedia_alarm", None, 0, 0)
-		except Exception as e:
-			logHandler.log.error(f"IslamicPedia: Error stopping audio: {e}")
+			
+			if getattr(self, "_alarm_wav_handle", None) is not None:
+				ctypes.windll.winmm.waveOutReset(self._alarm_wav_handle)
+		except Exception:
+			pass
+
+	def stop_preview(self):
+		"""Stops only the Settings Dialog preview audio."""
+		self._play_token_preview += 1
+		# Notice: Do not clear downloading_files globally to avoid cancelling main alarm downloads
+		# We just let the token rejection handle it
+		try:
+			if getattr(self, "_preview_wmp_handle", None) is not None:
+				self._preview_wmp_handle.controls.stop()
+				self._preview_wmp_handle = None
+		except Exception:
+			pass
+
+		try:
+			import ctypes
+			mci = ctypes.windll.winmm.mciSendStringW
+			mci("close islamic_pedia_preview", None, 0, 0)
+			
+			if getattr(self, "_preview_wav_handle", None) is not None:
+				ctypes.windll.winmm.waveOutReset(self._preview_wav_handle)
+		except Exception:
+			pass
 
 	def is_playing(self):
-		# nvwave doesn't expose is_playing status easily
-		# But since we use it exclusively, if we rely on it, we might not know.
-		# However, for UI toggle logic, we can just assume false or track it manually if needed.
-		# For now, return False as we can't reliably query PlaySound status without ctypes.
-		# If user clicks "Stop", we just call stop().
-		# Refactor UI to not depend on polling is_playing if possible, or just accept it's "fire and forget"
-		# But wait, UI uses it to reset button label.
-		# We can't easily know if PlaySound (ASYNC) is finished.
-		# WE WILL RETURN FALSE to disable the auto-reset timer logic, 
-		# OR we implement a heuristic/dummy.
-		# Best approach: nvwave doesn't support status check.
+		if len(self.downloading_files) > 0:
+			return True
+		if getattr(self, "_alarm_wav_handle", None) is not None:
+			return True
+			
+		try:
+			wmp = getattr(self, "_alarm_wmp_handle", None)
+			if wmp is not None and wmp.playState == 3: # 3 = Playing
+				return True
+		except Exception:
+			pass
+			
+		# Check MCI
+		try:
+			import ctypes
+			buf = ctypes.create_unicode_buffer(128)
+			mci = ctypes.windll.winmm.mciSendStringW
+			mci("status islamic_pedia_alarm mode", buf, 128, 0)
+			if buf.value == "playing":
+				return True
+		except Exception:
+			pass
+			
 		return False
 
-	def _download_and_play(self, filename, local_path, play_after=False, token=None):
+	def is_preview_playing(self):
+		if len(self.downloading_files) > 0:
+			return True
+			
+		if getattr(self, "_preview_wav_handle", None) is not None:
+			return True
+			
+		try:
+			wmp = getattr(self, "_preview_wmp_handle", None)
+			if wmp is not None and wmp.playState == 3: # 3 = Playing
+				return True
+		except Exception:
+			pass
+			
+		try:
+			import ctypes
+			buf = ctypes.create_unicode_buffer(128)
+			mci = ctypes.windll.winmm.mciSendStringW
+			mci("status islamic_pedia_preview mode", buf, 128, 0)
+			if buf.value == "playing":
+				return True
+		except Exception:
+			pass
+		return False
+
+	def _finalize_download_and_play(self, filename, local_path, token, is_preview):
+		try:
+			self._play_file(local_path, token, is_preview)
+		finally:
+			self.downloading_files.pop(filename, None)
+
+	def _download_and_play(self, filename, local_path, play_after=False, token=None, is_preview=False):
 		if self.shutdown_flag:
-			self.downloading_files.discard(filename)
+			self.downloading_files.pop(filename, None)
 			return
 			
 		base_url = self.data.get("base_url", "")
 		if not base_url:
-			self.downloading_files.discard(filename)
+			self.downloading_files.pop(filename, None)
 			return
 			
 		url = base_url + filename
+		tmp_path = local_path + ".tmp"
 		try:
 			logHandler.log.info(f"IslamicPedia: Downloading {url} to {local_path}")
 			
@@ -537,26 +664,87 @@ class SoundManager:
 			)
 			
 			with urllib.request.urlopen(req, context=ctx, timeout=30) as response:
-				data = response.read()
+				total_size = response.getheader('Content-Length')
+				if total_size is not None:
+					total_size = int(total_size)
 				
+				# Get progress mode
+				try:
+					progress_mode = self.config.get_download_progress_mode()
+				except Exception:
+					progress_mode = "beep"
+					
+				def do_feedback(percent):
+					if progress_mode in ["speech", "both"]:
+						ui.message(f"{percent}%")
+					if progress_mode in ["beep", "both"]:
+						try:
+							import tones
+							# Base pitch 440, increases up to 880 at 100%
+							tones.beep(int(440 + (percent * 4.4)), 50)
+						except Exception:
+							pass
+
 				if self.shutdown_flag:
 					return
+
+				with open(tmp_path, "wb") as f:
+					downloaded = 0
+					last_percent = -1
 					
-				with open(local_path, "wb") as f:
-					f.write(data)
+					while True:
+						if self.shutdown_flag:
+							return
+						chunk = response.read(8192)
+						if not chunk:
+							break
+						f.write(chunk)
+						downloaded += len(chunk)
+						
+						if total_size and is_preview:
+							percent = int((downloaded / total_size) * 100)
+							# Only feedback every 10% change to avoid spam
+							if percent >= last_percent + 10:
+								last_percent = (percent // 10) * 10
+								# Call feedback on main thread to avoid NVDA core freezes
+								wx.CallAfter(do_feedback, last_percent)
+				
+				# Rename temp to final when completely downloaded
+				import os
+				if os.path.exists(local_path):
+					try:
+						os.remove(local_path)
+					except OSError:
+						pass
+				try:
+					os.replace(tmp_path, local_path)
+				except OSError:
+					if os.path.exists(tmp_path):
+						import shutil
+						shutil.move(tmp_path, local_path)
 			
 			logHandler.log.info(f"IslamicPedia: Download successful. Playing: {play_after}")
 			
+			transfer_to_main = False
 			if play_after and not self.shutdown_flag:
 				try:
-					wx.CallAfter(self._play_file, local_path, token)
+					latest_token = self.downloading_files.get(filename, token)
+					transfer_to_main = True
+					wx.CallAfter(self._finalize_download_and_play, filename, local_path, latest_token, is_preview)
 				except Exception:
 					pass
 		except Exception as e:
+			try:
+				if os.path.exists(tmp_path):
+					os.remove(tmp_path)
+			except Exception:
+				pass
 			logHandler.log.error(f"IslamicPedia: Download failed for {url}: {e}")
 			if play_after and not self.shutdown_flag:
+				latest_token = self.downloading_files.get(filename, token)
 				# Cancel error prompt if token has expired
-				if token is not None and token != self._play_token:
+				target_token = self._play_token_preview if is_preview else self._play_token_main
+				if latest_token is not None and latest_token != target_token:
 					pass
 				else:
 					try:
@@ -566,4 +754,10 @@ class SoundManager:
 					except Exception:
 						pass
 		finally:
-			self.downloading_files.discard(filename)
+			if not locals().get("transfer_to_main", False):
+				self.downloading_files.pop(filename, None)
+			try:
+				if os.path.exists(tmp_path):
+					os.remove(tmp_path)
+			except Exception:
+				pass

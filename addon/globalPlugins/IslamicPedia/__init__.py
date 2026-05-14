@@ -2,10 +2,14 @@ import globalPluginHandler
 import ui
 import gui
 import wx
+import wx.html
+import os
 import logHandler
+import languageHandler
+import datetime
 
 from .config import Config
-from .interface import SettingsDialog, ZakatDialog
+from .interface import SettingsDialog, ZakatDialog, SettingsPanelUI
 from .api import PrayerTimeAPI
 from .player import SoundManager
 from .background import Scheduler
@@ -64,22 +68,50 @@ class InfoDialog(wx.Dialog):
 			ui.message(_("Gagal menyalin."))
 
 	def onOpen(self, event):
-		import webbrowser
-		webbrowser.open(self.url)
+		if self.url:
+			import webbrowser
+			webbrowser.open(self.url)
 
+
+
+
+_addon_plugin_instance = None
+
+class IslamicPediaSettingsPanel(gui.settingsDialogs.SettingsPanel):
+	title = _("Islamic Pedia")
+
+	def makeSettings(self, settingsSizer):
+		global _addon_plugin_instance
+		if not _addon_plugin_instance:
+			return
+		
+		# Instantiate our custom panel and add it
+		self.ui = SettingsPanelUI(self, 
+			_addon_plugin_instance.config,
+			_addon_plugin_instance.api,
+			_addon_plugin_instance.scheduler,
+			_addon_plugin_instance.player)
+			
+		settingsSizer.Add(self.ui, 1, wx.EXPAND | wx.ALL, 5)
+
+	def onSave(self):
+		if hasattr(self, 'ui'):
+			self.ui._save_settings(show_confirmation=False, close_dialog=False)
+
+	def onDiscard(self):
+		if hasattr(self, 'ui'):
+			self.ui.restore_original()
 
 class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	scriptCategory = _("Islamic Pedia")
 
 	def __init__(self):
 		super().__init__()
+		global _addon_plugin_instance
+		_addon_plugin_instance = self
 		self.config = Config()
 		self.api = PrayerTimeAPI()
-		try:
-			lang = languageHandler.getLanguage()[:2]
-		except Exception:
-			lang = "id"
-		self.wiki = WikiAPI(lang)
+		self.wiki = WikiAPI("id")
 		
 		# Dialog Locking Flag
 		self.is_dialog_open = False
@@ -95,6 +127,8 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			logHandler.log.error(f"IslamicPedia: Failed to initialize Audio System: {e}")
 			self.player = None
 			self.scheduler = None
+			
+		gui.settingsDialogs.NVDASettingsDialog.categoryClasses.append(IslamicPediaSettingsPanel)
 		
 		self.switch = False
 		self.commandLayerGestures = {
@@ -106,10 +140,35 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			"kb:i": "islamicPedia",
 			"kb:p": "settings",
 			"kb:t": "hijriDate",
+			"kb:w": "waktuSholatSaatIni",
 			"kb:z": "zakat",
 			"kb:escape": "exitLayer",
 			"kb:space": "stop",
 		}
+
+	def terminate(self):
+		global _addon_plugin_instance
+		_addon_plugin_instance = None
+		
+		# CRITICAL: Release audio file locks (WMPlayer, WinMM, MCI) so NVDA can delete the directory during updates.
+		if getattr(self, 'player', None):
+			try:
+				self.player.cleanup()
+			except Exception as e:
+				logHandler.log.error(f"IslamicPedia: Player cleanup failed on terminate: {e}")
+				
+		# CRITICAL: Stop background scheduler timer to prevent ghost executions after unload.
+		if getattr(self, 'scheduler', None):
+			try:
+				self.scheduler.stop_timer()
+			except Exception:
+				pass
+				
+		try:
+			gui.settingsDialogs.NVDASettingsDialog.categoryClasses.remove(IslamicPediaSettingsPanel)
+		except ValueError:
+			pass
+		super().terminate()
 
 	def check_dialog_open(self):
 		"""Checks if a dialog is already open. If so, warns user and returns False."""
@@ -179,7 +238,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 		if self.player:
 			self.player.play_system_sound("on.mp3")
-		ui.message(_("Masuk ke mode Islamic Pedia. Tekan B atau F1 untuk menampilkan bantuan."))
+		ui.message(_("Masuk ke mode Islamic Pedia. Tekan B atau F1 untuk bantuan dan dokumentasi."))
 		self.switch = True
 
 
@@ -196,9 +255,8 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			query = dlg.GetValue().strip()
 			dlg.Destroy()
 		finally:
+			gui.mainFrame.postPopup()
 			self.is_dialog_open = False
-			
-		gui.mainFrame.postPopup()
 
 		if res == wx.ID_OK:
 			if not query:
@@ -236,28 +294,12 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 				dlg.Destroy()
 			finally:
 				self.is_dialog_open = False
-				
-			gui.mainFrame.postPopup()
+				gui.mainFrame.postPopup()
 		
 		wx.CallAfter(show)
 
 	def script_help(self, gesture):
-		msg = [
-			_("Bantuan dan Daftar Perintah Penggunaan Islamic Pedia"),
-			"-" * 20,
-			_("B atau F1: Menampilkan bantuan atau daftar perintah"),
-			_("P: Membuka menu pengaturan"),
-			_("J: Menampilkan jadwal sholat hari ini"),
-			_("K: Menampilkan arah kiblat"),
-			_("T: Menampilkan tanggal Hijriyah"),
-			_("M: Mencari masjid terdekat"),
-			_("I: Cari Ensiklopedia Islami"),
-			_("Z: Kalkulator Zakat"),
-			_("Spasi: Menghentikan audio pengingat yang sedang berputar saat waktu telah tiba"),
-			_("Esc: Keluar dari mode Islamic Pedia")
-		]
-		
-		full_msg = "\n".join(msg)
+		choices = [_("Daftar Perintah"), _("Dokumentasi Lengkap")]
 		
 		if not self.check_dialog_open():
 			return
@@ -265,14 +307,67 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		gui.mainFrame.prePopup()
 		self.is_dialog_open = True
 		try:
-			# Use InfoDialog instead of browseableMessage
-			dlg = InfoDialog(gui.mainFrame, _("Bantuan dan Daftar Perintah Penggunaan Islamic Pedia"), full_msg)
-			dlg.ShowModal()
+			dlg = wx.SingleChoiceDialog(gui.mainFrame, _(" "), _("Apa yang ingin Anda tampilkan?"), choices)
+			dlg.SetSelection(0)
+			res = dlg.ShowModal()
+			sel = dlg.GetSelection()
 			dlg.Destroy()
 		finally:
+			# Choice dialog is closed, safely release lock and postPopup
+			# BEFORE launching the next dialog so focus isn't stolen.
 			self.is_dialog_open = False
-		
-		gui.mainFrame.postPopup()
+			gui.mainFrame.postPopup()
+			
+		if res == wx.ID_OK:
+			if sel == 0:
+				msg = [
+					_("Daftar Perintah Islamic Pedia"),
+					"-" * 20,
+					_("B atau F1: Buka dialog bantuan"),
+					_("P: Buka dialog pengaturan"),
+					_("W: Tampilkan waktu sholat saat ini"),
+					_("J: Tampilkan jadwal lengkap sholat hari ini"),
+					_("K: Tampilkan arah kiblat dan jarak ke ka'bah"),
+					_("T: Tampilkan tanggal hijriyah hari ini"),
+					_("M: Tampilkan daftar masjid terdekat"),
+					_("I: Buka dialog ensiklopedia islami"),
+					_("Z: Buka dialog kalkulator zakat"),
+					_("Spasi: Hentikan suara pengingat yang berbunyi"),
+					_("Escape: Keluar dari mode islamic pedia")
+				]
+				full_msg = "\n".join(msg)
+				
+				# Lock again for InfoDialog
+				if not self.check_dialog_open(): return
+				gui.mainFrame.prePopup()
+				self.is_dialog_open = True
+				try:
+					info_dlg = InfoDialog(gui.mainFrame, _("Daftar Perintah Islamic Pedia"), full_msg)
+					info_dlg.ShowModal()
+					info_dlg.Destroy()
+				finally:
+					self.is_dialog_open = False
+					gui.mainFrame.postPopup()
+				
+			elif sel == 1:
+				import os
+				lang = languageHandler.getLanguage()[:2]
+				base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+				
+				html_path = os.path.join(base_dir, "doc", lang, "readme.html")
+				if not os.path.exists(html_path):
+					html_path = os.path.join(base_dir, "doc", "id", "readme.html")
+						
+				if os.path.exists(html_path):
+					try:
+						with open(html_path, "r", encoding="utf-8") as f:
+							html_content = f.read()
+						# browseableMessage handles its own modal/focus state natively.
+						ui.browseableMessage(html_content, _("Dokumentasi Islamic Pedia"), isHtml=True)
+					except Exception as e:
+						ui.message(f"Gagal memuat dokumen: {e}")
+				else:
+					ui.message(_("Dokumen belum tersedia."))
 
 	def script_stop(self, gesture):
 		# Layer already closed by getScript, so we just stop audio here.
@@ -284,6 +379,103 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			self.player.stop()
 			
 		ui.message(_("Audio berhenti."))
+
+	def script_waktuSholatSaatIni(self, gesture):
+		# Identical Logic mapped from home_screen.dart (Flutter)
+		if not getattr(self, 'scheduler', None) or not getattr(self.scheduler, 'cached_schedule', None):
+			ui.message(_("Data jadwal sholat belum tersedia. Pastikan internet terhubung atau lokasi sudah diatur."))
+			return
+
+		schedule = self.scheduler.cached_schedule
+		now = datetime.datetime.now()
+
+		# Parsing helper
+		def _parseTime(timeStr):
+			try:
+				parts = timeStr.split(':')
+				h = int(parts[0].split(' ')[0])
+				m = int(parts[1].split(' ')[0])
+				return now.replace(hour=h, minute=m, second=0, microsecond=0)
+			except Exception:
+				return now
+
+		times = {
+			"Imsak": _parseTime(schedule.get("Imsak", "04:00")),
+			"Subuh": _parseTime(schedule.get("Subuh", "04:20")),
+			"Terbit": _parseTime(schedule.get("Terbit", "05:40")),
+			"Dhuha": _parseTime(schedule.get("Dhuha", "06:00")),
+			"Dzuhur": _parseTime(schedule.get("Dzuhur", "12:00")),
+			"Ashar": _parseTime(schedule.get("Ashar", "15:00")),
+			"Maghrib": _parseTime(schedule.get("Maghrib", "18:00")),
+			"Isya": _parseTime(schedule.get("Isya", "19:00")),
+		}
+
+		# Sort
+		sorted_entries = sorted(times.items(), key=lambda x: x[1])
+
+		nextName = None
+		nextTime = None
+		prevName = None
+		prevTimeObj = None
+
+		for i in range(len(sorted_entries)):
+			if sorted_entries[i][1] > now:
+				nextName = sorted_entries[i][0]
+				nextTime = sorted_entries[i][1]
+				if i > 0:
+					prevName = sorted_entries[i-1][0]
+					prevTimeObj = sorted_entries[i-1][1]
+				else:
+					prevName = "Isya"
+					# Yesterday's Isya
+					prevTimeObj = _parseTime(schedule.get("Isya", "19:00")) - datetime.timedelta(days=1)
+				break
+
+		# If no next prayer (passed today's Isya), next is tomorrow's Imsak/Subuh
+		if not nextName:
+			nextName = sorted_entries[0][0]
+			nextTime = sorted_entries[0][1] + datetime.timedelta(days=1)
+			prevName = "Isya"
+			prevTimeObj = _parseTime(schedule.get("Isya", "19:00"))
+
+		effectivePrevTime = prevTimeObj
+
+		totalDurationMins = int((nextTime - effectivePrevTime).total_seconds() / 60)
+		halfDurationMins = totalDurationMins // 2
+		midTime = effectivePrevTime + datetime.timedelta(minutes=halfDurationMins)
+
+		msg = ""
+		if now < midTime:
+			# Focus on previous prayer (already entered)
+			elapsedMins = int((now - effectivePrevTime).total_seconds() / 60)
+			if elapsedMins < 1:
+				msg = _("Saatnya waktu {}, tepat di menit ini.").format(prevName)
+			elif elapsedMins <= 10:
+				msg = _("Baru saja waktu {}, ± {} menit yang lalu.").format(prevName, elapsedMins)
+			else:
+				h = elapsedMins // 60
+				m = elapsedMins % 60
+				if h > 0:
+					msg = _("Waktu {} sudah lewat, ± {} jam {} menit yang lalu.").format(prevName, h, m)
+				else:
+					msg = _("Waktu {} sudah lewat, ± {} menit yang lalu.").format(prevName, elapsedMins)
+		else:
+			# Focus on next prayer (upcoming)
+			remainingMins = int((nextTime - now).total_seconds() / 60)
+			
+			if remainingMins > 10:
+				h = remainingMins // 60
+				m = remainingMins % 60
+				if h > 0:
+					msg = _("Menuju waktu {}, ± {} jam {} menit lagi.").format(nextName, h, m)
+				else:
+					msg = _("Menuju waktu {}, ± {} menit lagi.").format(nextName, remainingMins)
+			elif remainingMins >= 1:
+				msg = _("Sebentar lagi waktu {}, ± {} menit lagi.").format(nextName, remainingMins)
+			else:
+				msg = _("Saatnya waktu {}, tepat di menit ini.").format(nextName)
+
+		ui.message(msg)
 
 	def script_prayerTimes(self, gesture):
 		lat, lon = self.config.get_coordinates()
@@ -308,8 +500,12 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		def fetch():
 			try:
 				# Updated to unpack 3 values (Hijri added)
-				date_str, schedule, hijri_str = self.api.get_prayer_times(lat, lon, method, school)
-				wx.CallAfter(self._on_prayer_times_fetched, date_str, schedule, hijri_str)
+				try:
+					date_str, schedule, hijri_str = self.api.get_prayer_times(lat, lon, method, school)
+					wx.CallAfter(self._on_prayer_times_fetched, date_str, schedule, hijri_str)
+				except Exception as e:
+					logHandler.log.error(f"IslamicPedia API Error: {e}")
+					wx.CallAfter(ui.message, _("Gagal memuat jadwal. Mohon periksa koneksi internet."))
 			finally:
 				self._is_fetching = False
 		
@@ -351,8 +547,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 					dlg.Destroy()
 				finally:
 					self.is_dialog_open = False
-				
-				gui.mainFrame.postPopup()
+					gui.mainFrame.postPopup()
 
 			# Small delay 300ms to avoid speech collision
 			wx.CallLater(300, show_schedule)
@@ -360,6 +555,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			ui.message(_("Gagal memuat data. Mohon periksa koneksi internet."))
 
 	def script_settings(self, gesture):
+		ui.message(_("Sedang memuat menu..."))
 		# Defer to next event loop iteration so NVDA finishes processing the gesture first.
 		# This fixes the focus issue on first open after NVDA restart.
 		wx.CallAfter(self.showSettingsDialog)
@@ -422,8 +618,12 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		
 		def fetch():
 			try:
-				date_str, schedule, hijri_str = self.api.get_prayer_times(lat, lon, method, school)
-				wx.CallAfter(self._on_hijri_fetched, hijri_str)
+				try:
+					date_str, schedule, hijri_str = self.api.get_prayer_times(lat, lon, method, school)
+					wx.CallAfter(self._on_hijri_fetched, hijri_str)
+				except Exception as e:
+					logHandler.log.error(f"IslamicPedia API Error: {e}")
+					wx.CallAfter(ui.message, _("Gagal memuat tanggal Hijriyah. Mohon periksa koneksi internet."))
 			finally:
 				self._is_fetching = False
 		
@@ -539,9 +739,12 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			try:
 				# Optimized: Single broad query (3km) for better stability
 				radius = 3000
-				found_mosques = self.api.search_mosques(lat, lon, radius)
-				
-				wx.CallAfter(self._on_mosques_found, found_mosques, lat, lon, radius)
+				try:
+					found_mosques = self.api.search_mosques(lat, lon, radius)
+					wx.CallAfter(self._on_mosques_found, found_mosques, lat, lon, radius)
+				except Exception as e:
+					logHandler.log.error(f"IslamicPedia API Error: {e}")
+					wx.CallAfter(ui.message, _("Pencarian gagal. Mohon periksa koneksi internet."))
 			finally:
 				self._is_fetching_mosque = False
 				# Stop timer safely on main thread
@@ -591,7 +794,11 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 				# Use custom MessageDialog to ensure "Ya/Tidak" labels
 				dlg = wx.MessageDialog(gui.mainFrame, msg, _("Tidak Ditemukan"), wx.YES_NO | wx.ICON_QUESTION)
 				dlg.SetYesNoLabels(_("Ya"), _("Tidak"))
+				
+				gui.mainFrame.prePopup()
 				res = dlg.ShowModal()
+				gui.mainFrame.postPopup()
+				
 				dlg.Destroy()
 				
 				if res == wx.ID_YES:
@@ -646,7 +853,11 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 				dlg = wx.SingleChoiceDialog(gui.mainFrame, full_msg, _("Hasil Pencarian Masjid"), choices)
 				dlg.SetSelection(current_selection)
 				
-				if dlg.ShowModal() == wx.ID_OK:
+				gui.mainFrame.prePopup()
+				res = dlg.ShowModal()
+				gui.mainFrame.postPopup()
+				
+				if res == wx.ID_OK:
 					sel = dlg.GetSelection()
 					current_selection = sel # Remember last selection
 					dlg.Destroy()

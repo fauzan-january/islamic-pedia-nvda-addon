@@ -1,3 +1,9 @@
+## Changelog - Versi 1.2.0
+
+- Memperbarui dukungan ke NVDA 2026.1 (Python 3.13, 64-bit).
+- Memperkuat kompatibilitas ctypes 64-bit pada modul audio (WAVEHDR struct: dwUser dan reserved diubah dari c_void_p ke c_size_t sesuai spesifikasi DWORD_PTR Windows).
+- Tetap kompatibel mundur hingga NVDA 2024.1.
+
 ## Changelog - Versi 1.1.0
 
 - Menambahkan fitur Kalkulator Zakat untuk menghitung 5 jenis zakat: Penghasilan, Maal (Harta/Tabungan), Emas, Perak, dan Fitrah.

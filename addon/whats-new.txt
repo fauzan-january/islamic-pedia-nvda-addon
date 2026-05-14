@@ -1,4 +1,9 @@
 Apa yang baru?
+Versi 1.2.0
+  - Memperbarui dukungan ke NVDA 2026.1 (Python 3.13, 64-bit).
+  - Memperkuat kompatibilitas ctypes 64-bit pada modul audio (WAVEHDR struct).
+  - Tetap kompatibel dengan NVDA 2024.1 ke atas.
+
 Versi 1.1.0
   - Menambahkan fitur Kalkulator Zakat untuk menghitung 5 jenis zakat: Penghasilan, Maal (Harta/Tabungan), Emas, Perak, dan Fitrah.
   - Menambahkan shortcut Z untuk membuka Kalkulator Zakat (NVDA+Shift+I lalu Z).

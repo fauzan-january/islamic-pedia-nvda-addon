@@ -13,6 +13,7 @@ except ImportError:
 
 class WikiAPI:
 	def __init__(self, lang="id"):
+		self.lang = lang
 		self.base_url = f"https://{lang}.wikipedia.org/w/api.php"
 		self.headers = {
 			'User-Agent': 'IslamicPedia-NVDA-Addon/1.0 (https://github.com/fauzan-january/IslamicPedia)'
@@ -131,7 +132,7 @@ class WikiAPI:
 					return {
 						"title": title_text,
 						"extract": extract_text,
-						"url": f"https://id.wikipedia.org/wiki/{urllib.parse.quote(title_text.replace(' ', '_'))}"
+						"url": f"https://{self.lang}.wikipedia.org/wiki/{urllib.parse.quote(title_text.replace(' ', '_'))}"
 					}
 				return None
 		except Exception as e:

@@ -6,10 +6,12 @@ addon_info = AddonInfo(
 	addon_summary=_("Islamic Pedia"),
 	addon_description=_(
 		"Solusi lengkap kebutuhan Tunanetra Muslim: Jadwal Sholat, Arah Kiblat, Kalender Hijriyah, dan masih banyak fitur canggih lainnya dalam satu addon NVDA yang aksesibel.\n"
-		"Cara pakai: Tekan shortcut NVDA + SHIFT + I (masuk ke mode Islamic Pedia). Tekan B atau F1 untuk menampilkan bantuan dan daftar perintah penggunaan."
+		"Cara pakai: Tekan shortcut NVDA + SHIFT + I (masuk ke mode Islamic Pedia). Tekan B atau F1 untuk mengakses Bantuan dan Dokumentasi Lengkap."
 	),
-	addon_version="1.1.0",
+	addon_version="1.2.0",
 	addon_changelog=_(
+		"- Menambahkan fitur Status Waktu Sholat Saat Ini (Shortcut W) untuk mengetahui waktu tersisa atau yang telah berlalu.\n"
+		"- Memperbarui menu Bantuan (B/F1) untuk menampilkan opsi Dokumentasi Lengkap.\n"
 		"- Menambahkan fitur Kalkulator Zakat untuk menghitung 5 jenis zakat: Penghasilan, Maal (Harta/Tabungan), Emas, Perak, dan Fitrah.\n"
 		"- Menambahkan shortcut Z untuk membuka Kalkulator Zakat (NVDA+Shift+I lalu Z).\n"
 		"- Menambahkan input dinamis pada dialog Kalkulator Zakat yang berubah sesuai jenis zakat yang dipilih dari dropdown.\n"
@@ -28,7 +30,7 @@ addon_info = AddonInfo(
 	addon_sourceURL="https://github.com/fauzan-january/islamic-pedia/",
 	addon_docFileName="readme.html",
 	addon_minimumNVDAVersion="2024.1",
-	addon_lastTestedNVDAVersion="2025.3",
+	addon_lastTestedNVDAVersion="2026.1",
 	addon_updateChannel=None,
 	addon_license="GPL-2.0",
 	addon_licenseURL="https://www.gnu.org/licenses/gpl-2.0.html",

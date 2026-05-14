@@ -35,9 +35,9 @@ class Config:
 				"Terbit": "speech",
 				"Dhuha": "speech"
 			},
-			"audio_source": "online",    # online, offline
 			"hijri_adjustment": 0,       # Hijri date adjustment (-2 to +2)
 			"search_progress_mode": "beep", # Search progress indicator mode (off, speech, beep, both)
+			"download_progress_mode": "beep", # Download progress indicator mode (off, speech, beep, both)
 			"notification_volume": 50,      # Global notification volume (0-100)
 			"notification_device": "",       # Output device name (empty = system default)
 			"pre_reminder_minutes": 10,
@@ -160,6 +160,13 @@ class Config:
 
 	def set_hijri_adjustment(self, val):
 		self.data["hijri_adjustment"] = int(val)
+		self.save()
+
+	def get_download_progress_mode(self):
+		return self.data.get("download_progress_mode", "beep")
+
+	def set_download_progress_mode(self, val):
+		self.data["download_progress_mode"] = str(val)
 		self.save()
 
 	def get_search_progress_mode(self):

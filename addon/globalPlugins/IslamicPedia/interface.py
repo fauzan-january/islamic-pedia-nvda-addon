@@ -12,15 +12,17 @@ except ImportError:
 	import gettext
 	def _(s): return s
 
-class SettingsDialog(wx.Dialog):
+class SettingsPanelUI(wx.Panel):
 	def __init__(self, parent, config, api, scheduler=None, player=None):
-		# Use resizeable dialog style
-		super().__init__(parent, title=_("Pengaturan Islamic Pedia"), style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
+		super().__init__(parent)
 		
 		# Prevent UI updates during construction to improve performance
 		self.Freeze()
 		
 		self.config = config
+		import copy
+		self._original_config_data = copy.deepcopy(self.config.data)
+		
 		self.api = api
 		self.scheduler = scheduler
 		self.player = player
@@ -51,10 +53,9 @@ class SettingsDialog(wx.Dialog):
 		self.method_tab_initialized = False
 		self.notebook.AddPage(self.page_method, _("Hisab"))
 
-		# === TAB 4: NOTIFIKASI (Lazy Load) ===
-		# Just create empty panel, content loaded on first visit
+		# === TAB 4: NOTIFIKASI ===
 		self.page_audio = wx.Panel(self.notebook)
-		self.audio_tab_initialized = False
+		self.setup_audio_tab()
 		self.notebook.AddPage(self.page_audio, _("Notifikasi"))
 
 		# === TAB 5: DONASI (Lazy Load) ===
@@ -65,39 +66,12 @@ class SettingsDialog(wx.Dialog):
 		self.notebook.Bind(wx.EVT_NOTEBOOK_PAGE_CHANGED, self.on_tab_changed)
 
 		self.mainSizer.Add(self.notebook, 1, wx.EXPAND | wx.ALL, 5)
-
-		# Buttons
-		btnSizer = wx.BoxSizer(wx.HORIZONTAL)
-		
-		self.btn_ok = wx.Button(self, wx.ID_OK, label=_("OK"))
-		self.btn_ok.Bind(wx.EVT_BUTTON, self.on_save)
-		
-		self.btn_cancel = wx.Button(self, wx.ID_CANCEL, label=_("Batal"))
-		self.btn_cancel.Bind(wx.EVT_BUTTON, self.on_cancel)
-		
-		self.btn_apply = wx.Button(self, wx.ID_APPLY, label=_("Terapkan"))
-		self.btn_apply.Bind(wx.EVT_BUTTON, self.on_apply)
-		
-		btnSizer.Add(self.btn_ok, 0, wx.ALL, 5)
-		btnSizer.Add(self.btn_cancel, 0, wx.ALL, 5)
-		btnSizer.Add(self.btn_apply, 0, wx.ALL, 5)
-		
-		self.mainSizer.Add(btnSizer, 0, wx.ALIGN_RIGHT | wx.ALL, 5)
-
 		self.SetSizer(self.mainSizer)
 		self.mainSizer.Fit(self)
-		
-		# Center on screen
-		self.Centre()
 		
 		# Re-enable UI updates
 		self.Thaw()
 		
-		# Escape key handler
-		self.Bind(wx.EVT_CHAR_HOOK, self.on_char_hook)
-
-
-
 		self.cities_cache = []
 		
 		# Lazy Loading Safety: Initialize variables used in on_save
@@ -110,9 +84,6 @@ class SettingsDialog(wx.Dialog):
 		if sel == 2 and not self.method_tab_initialized:
 			self.setup_method_tab()
 			self.method_tab_initialized = True
-		elif sel == 3 and not self.audio_tab_initialized:
-			self.setup_audio_tab()
-			self.audio_tab_initialized = True
 		elif sel == 4 and not self.donation_tab_initialized:
 			self.setup_donation_tab()
 			self.donation_tab_initialized = True
@@ -150,6 +121,31 @@ class SettingsDialog(wx.Dialog):
 		self.cmb_search_progress.SetSelection(sel_progress)
 		
 		sizer.Add(self.cmb_search_progress, 0, wx.EXPAND | wx.ALL, 10)
+		
+		# Download Progress Indicator
+		self.download_progress_modes = [
+			(_("Mati"), "off"),
+			(_("Ucapkan persentase"), "speech"),
+			(_("Bip persentase"), "beep"),
+			(_("Bip dan ucapkan persentase"), "both")
+		]
+		
+		lbl_dl_progress = wx.StaticText(self.page_general, label=_("Indikator Proses Unduhan Audio:"))
+		sizer.Add(lbl_dl_progress, 0, wx.LEFT | wx.RIGHT | wx.TOP, 10)
+		
+		dl_choices = [x[0] for x in self.download_progress_modes]
+		self.cmb_download_progress = wx.Choice(self.page_general, choices=dl_choices)
+		
+		# Set selection based on config
+		curr_dl_progress = self.config.get_download_progress_mode()
+		sel_dl_progress = 2 # Default to "beep"
+		for i, v in enumerate(self.download_progress_modes):
+			if v[1] == curr_dl_progress:
+				sel_dl_progress = i
+				break
+		self.cmb_download_progress.SetSelection(sel_dl_progress)
+		
+		sizer.Add(self.cmb_download_progress, 0, wx.EXPAND | wx.ALL, 10)
 		
 		self.page_general.SetSizer(sizer)
 
@@ -202,24 +198,31 @@ class SettingsDialog(wx.Dialog):
 		sizer.Add(lbl_expl, 0, wx.ALL, 10)
 
 		# Calculation Method
-		# Data source: Aladhan API
+		# Data source: Aladhan API (Synced with Islamic Pedia Mobile App)
 		self.calc_methods = [
-			(_("Kemenag RI (Sihat) - Indonesia"), "20"),
-			(_("Muslim World League"), "3"),
-			(_("Umm al-Qura University, Makkah"), "4"),
-			(_("Egyptian General Authority of Survey"), "5"),
-			(_("Islamic Society of North America (ISNA)"), "2"),
-			(_("University of Islamic Sciences, Karachi"), "1"),
-			(_("Shia Ithna-Ashari, Leva Institute, Qum"), "0"),
-			(_("Gulf Region"), "8"),
-			(_("Kuwait"), "9"),
-			(_("Qatar"), "10"),
-			(_("Majlis Ugama Islam Singapura, Singapore"), "11"),
-			(_("Union Organization islamic de France"), "12"),
-			(_("Diyanet Isleri Baskanligi, Turkey"), "13"),
-			(_("Spiritual Administration of Muslims of Russia"), "14"),
-			(_("Moonsighting Committee Worldwide (Paruh Waktu)"), "15"),
-			(_("Dubai (Unofficial)"), "16"),
+			(_("Kementerian Agama Republik Indonesia (Kemenag RI)"), "20"),
+			(_("Majlis Ugama Islam Singapura (MUIS)"), "11"),
+			(_("Jabatan Kemajuan Islam Malaysia (JAKIM)"), "17"),
+			(_("Kawasan Teluk Arab"), "8"),
+			(_("Universitas Umm Al-Qura – Makkah, Arab Saudi"), "4"),
+			(_("Kementerian Wakaf dan Urusan Keislaman – Kuwait"), "9"),
+			(_("Kementerian Wakaf dan Urusan Keislaman – Qatar"), "10"),
+			(_("Otoritas Islam – Dubai, Uni Emirat Arab"), "16"),
+			(_("Kementerian Wakaf dan Urusan Keislaman – Yordania"), "23"),
+			(_("Otoritas Umum Survei Mesir (EGAS)"), "5"),
+			(_("Liga Muslim Dunia (MWL)"), "3"),
+			(_("Universitas Sains Islam – Karachi, Pakistan"), "1"),
+			(_("Syi'ah Ithna-Ansari"), "0"),
+			(_("Institut Geofisika Universitas Tehran – Iran"), "7"),
+			(_("Diyanet İşleri Başkanlığı – Turki"), "13"),
+			(_("Administrasi Spiritual Umat Islam – Rusia"), "14"),
+			(_("Komite Rukyatul Hilal Internasional (MCWW)"), "15"),
+			(_("Kementerian Urusan Agama – Tunisia"), "18"),
+			(_("Kementerian Urusan Agama – Aljazair"), "19"),
+			(_("Kementerian Wakaf dan Urusan Keislaman – Maroko"), "21"),
+			(_("Komunitas Islam Lisboa (CIL) – Portugal"), "22"),
+			(_("Perhimpunan Islam Amerika Utara (ISNA)"), "2"),
+			(_("Organisasi Islam Bersatu Prancis (UOIF)"), "12"),
 		]
 		
 		lbl_calc = wx.StaticText(self.page_method, label=_("Metode Kalkulasi (Calculation Method):"))
@@ -241,7 +244,7 @@ class SettingsDialog(wx.Dialog):
 		
 		# Juristic Method
 		self.asr_methods = [
-			(_("Standar (Syafi'i, Maliki, Hanbali)"), "0"),
+			(_("Shafii, Maliki, Hanbali (Standar)"), "0"),
 			(_("Hanafi"), "1")
 		]
 		
@@ -268,11 +271,11 @@ class SettingsDialog(wx.Dialog):
 		
 		# Define mapping for Hijri adjustment values
 		self.hijri_adj_options = [
-			(_("Mundur 2 hari"), -2),
-			(_("Mundur 1 hari"), -1),
-			(_("Sesuai Kalender (0)"), 0),
-			(_("Maju 1 hari"), 1),
-			(_("Maju 2 hari"), 2)
+			(_("-2 Hari"), -2),
+			(_("-1 Hari"), -1),
+			(_("Bawaan (Otomatis)"), 0),
+			(_("+1 Hari"), 1),
+			(_("+2 Hari"), 2)
 		]
 		
 		adj_choices = [x[0] for x in self.hijri_adj_options]
@@ -397,9 +400,11 @@ class SettingsDialog(wx.Dialog):
 		sizer.Add(self.scroll_audio, 1, wx.EXPAND | wx.ALL, 5)
 		self.page_audio.SetSizer(sizer)
 		
-		# Timer for playback monitoring
+		# Timer for real-time playback monitoring
 		self.playback_timer = wx.Timer(self)
 		self.Bind(wx.EVT_TIMER, self.on_playback_timer, self.playback_timer)
+		
+		# Track currently playing preview
 		self.playing_button = None
 		
 		# Ensure layout is updated after lazy load
@@ -637,20 +642,6 @@ class SettingsDialog(wx.Dialog):
 		import webbrowser
 		webbrowser.open(url)
 
-	def on_char_hook(self, event):
-		key = event.GetKeyCode()
-		if key == wx.WXK_ESCAPE:
-			self.close_and_stop()
-		else:
-			event.Skip()
-
-	def on_cancel(self, event):
-		self.close_and_stop()
-		
-	def close_and_stop(self):
-		if self.player:
-			self.player.smart_cleanup()
-		self.EndModal(wx.ID_CANCEL)
 
 
 	def on_readonly_char(self, event):
@@ -681,14 +672,14 @@ class SettingsDialog(wx.Dialog):
 		# Check if this button is already playing
 		if self.playing_button == btn:
 			# Wants to stop
-			if self.player: self.player.stop()
+			if self.player: self.player.stop_preview()
 			self.reset_playback_ui()
 			return
 
 		# If another button was playing, reset it first
 		if self.playing_button:
 			# Stop previous audio
-			if self.player: self.player.stop()
+			if self.player: self.player.stop_preview()
 			self.reset_playback_ui()
 
 		sel_idx = cmb.GetSelection()
@@ -702,59 +693,37 @@ class SettingsDialog(wx.Dialog):
 				if self.player:
 					is_cached = self.player.preview(filename)
 					
-					# Update UI
 					btn.SetLabel(_("Berhenti"))
 					self.playing_button = btn
+					# Start polling every 500ms
+					self.playback_timer.Start(500)
 					
 					if is_cached:
 						ui.message(_("Memutar..."))
 					else:
-						ui.message(_("Sedang mengunduh pratinjau..."))
+						if self.config.get_download_progress_mode() != "off":
+							ui.message(_("Sedang mengunduh pratinjau..."))
 		elif sel_idx == 0:
 			ui.message(_("Silakan pilih suara terlebih dahulu."))
 
 	def on_playback_timer(self, event):
-		# Since is_playing is unreliable for nvwave/MCI mixture without ctypes polling
-		# We use a simple timeout heuristic or just let user stop it manually.
-		# But to be "nice", let's auto-reset after 30 seconds max (prevent stuck button)
-		# Or if we want real polling, we need ctypes. 
-		# Given the constraints, we will just use a hard timeout for the button reset
-		# or allow the user to click "Berhenti".
-		
-		# Current implementation: Auto-reset after 15 seconds (avg adzan duration preview)
-		# This is a UX compromise.
-		if self.playing_button:
-			# Check if button still exists
-			try:
-				# Accessing a wx object can raise PyDeadObjectError if it's gone
-				if not self.playing_button.IsBeingDeleted():
-					# We can also check if thread is alive if we tracked it, but nvwave is fire-and-forget.
-					# So we will just increment a counter (not implemented here) or just rely on manual stop.
-					# Let's actually just disable the timer auto-stop for simplicity unless we know for sure.
-					# OR: Use a simpler method: just don't auto-stop. User clicks Stop.
-					pass
-				else:
-					self.reset_playback_ui()
-			except wx.PyDeadObjectError:
+		if getattr(self, "playing_button", None) and getattr(self, "player", None):
+			if not self.player.is_preview_playing():
 				self.reset_playback_ui()
-			except Exception:
-				# Catch other potential errors if the button is in a bad state
-				self.reset_playback_ui()
-
 
 	def reset_playback_ui(self):
-		self.playback_timer.Stop()
-		if self.playing_button:
+		if hasattr(self, "playback_timer"):
+			self.playback_timer.Stop()
+		if getattr(self, "playing_button", None):
 			try:
-				self.playing_button.SetLabel(_("Dengarkan"))
-				self.playing_button.Enable() # Ensure re-enabled
-			except wx.PyDeadObjectError:
-				# Button might have been destroyed
-				pass
+				if not self.playing_button.IsBeingDeleted():
+					self.playing_button.SetLabel(_("Tes"))
+					self.playing_button.Enable()
 			except Exception:
-				# Catch other potential errors if the button is in a bad state
 				pass
 			self.playing_button = None
+
+
 
 	def on_search(self, event):
 		query = self.txt_search.GetValue()
@@ -810,16 +779,6 @@ class SettingsDialog(wx.Dialog):
 			sel = self.cmb_device.GetSelection()
 			if sel != wx.NOT_FOUND and hasattr(self, '_device_names'):
 				self._original_device = self._device_names[sel]
-
-	def on_cancel(self, event):
-		"""Restore the original volume and device in memory so they aren't changed if user cancels."""
-		if hasattr(self, '_original_volume'):
-			self.config.data["notification_volume"] = self._original_volume
-		if hasattr(self, '_original_device'):
-			self.config.data["notification_device"] = self._original_device
-		if self.player:
-			self.player.stop()
-		self.Destroy()
 
 	def on_save(self, event):
 		self._save_settings(show_confirmation=False, close_dialog=True)
@@ -878,6 +837,12 @@ class SettingsDialog(wx.Dialog):
 			sel = self.cmb_search_progress.GetSelection()
 			if sel != wx.NOT_FOUND:
 				self.config.set_search_progress_mode(self.search_progress_modes[sel][1])
+
+		# Save Download Progress Mode
+		if hasattr(self, 'cmb_download_progress') and self.cmb_download_progress:
+			sel = self.cmb_download_progress.GetSelection()
+			if sel != wx.NOT_FOUND:
+				self.config.set_download_progress_mode(self.download_progress_modes[sel][1])
 
 		# Save Calculation Method
 		if self.cmb_calc:
@@ -946,7 +911,9 @@ class SettingsDialog(wx.Dialog):
 			ui.message(_("Pengaturan disimpan."))
 			
 		if close_dialog:
-			self.close_and_stop()
+			self.stop_and_cleanup()
+		
+		# Allow caller to handle destruction if needed.
 		
 		if self.player:
 			# Stop preview and perform smart cleanup (delete unused files)
@@ -962,6 +929,81 @@ class SettingsDialog(wx.Dialog):
 						self.player.ensure_cached(filename, play_after=False)
 			threading.Thread(target=sync_cache_bg, daemon=True).start()
 
+
+	def stop_and_cleanup(self):
+		if hasattr(self, "playback_timer") and self.playback_timer.IsRunning():
+			self.playback_timer.Stop()
+		if self.player:
+			self.player.stop_preview()
+			self.player.smart_cleanup()
+			
+	def restore_original(self):
+		"""Restore the original config data in memory."""
+		if hasattr(self, '_original_config_data'):
+			self.config.data = self._original_config_data
+		if hasattr(self, '_original_volume'):
+			self.config.data["notification_volume"] = self._original_volume
+		if hasattr(self, '_original_device'):
+			self.config.data["notification_device"] = self._original_device
+		self.stop_and_cleanup()
+
+class SettingsDialog(wx.Dialog):
+	def __init__(self, parent, config, api, scheduler=None, player=None):
+		super().__init__(parent, title=_("Pengaturan Islamic Pedia"), style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
+		
+		mainSizer = wx.BoxSizer(wx.VERTICAL)
+		self.ui = SettingsPanelUI(self, config, api, scheduler, player)
+		mainSizer.Add(self.ui, 1, wx.EXPAND | wx.ALL, 5)
+		
+		# Buttons
+		btnSizer = wx.BoxSizer(wx.HORIZONTAL)
+		self.btn_ok = wx.Button(self, wx.ID_OK, label=_("OK"))
+		self.btn_cancel = wx.Button(self, wx.ID_CANCEL, label=_("Batal"))
+		self.btn_apply = wx.Button(self, wx.ID_APPLY, label=_("Terapkan"))
+		
+		self.btn_ok.Bind(wx.EVT_BUTTON, self.on_ok)
+		self.btn_cancel.Bind(wx.EVT_BUTTON, self.on_cancel)
+		self.btn_apply.Bind(wx.EVT_BUTTON, self.on_apply)
+		
+		btnSizer.Add(self.btn_ok, 0, wx.ALL, 5)
+		btnSizer.Add(self.btn_cancel, 0, wx.ALL, 5)
+		btnSizer.Add(self.btn_apply, 0, wx.ALL, 5)
+		
+		mainSizer.Add(btnSizer, 0, wx.ALIGN_RIGHT | wx.ALL, 5)
+
+		self.SetSizer(mainSizer)
+		mainSizer.Fit(self)
+		self.Centre()
+		
+		self.Bind(wx.EVT_CHAR_HOOK, self.on_char_hook)
+		self.Bind(wx.EVT_CLOSE, self.on_close)
+
+	def on_char_hook(self, event):
+		if event.GetKeyCode() == wx.WXK_ESCAPE:
+			self.on_cancel(None)
+		else:
+			event.Skip()
+
+	def on_close(self, event):
+		self.on_cancel(None)
+
+	def on_apply(self, event):
+		self.ui._save_settings(show_confirmation=True, close_dialog=False)
+		# Update the restore-point so Cancel reverts to the last applied value
+		if hasattr(self.ui, 'slider_volume') and self.ui.slider_volume:
+			self.ui._original_volume = self.ui.slider_volume.GetValue()
+		if hasattr(self.ui, 'cmb_device') and self.ui.cmb_device:
+			sel = self.ui.cmb_device.GetSelection()
+			if sel != wx.NOT_FOUND and hasattr(self.ui, '_device_names'):
+				self.ui._original_device = self.ui._device_names[sel]
+
+	def on_cancel(self, event):
+		self.ui.restore_original()
+		self.EndModal(wx.ID_CANCEL)
+
+	def on_ok(self, event):
+		self.ui._save_settings(show_confirmation=False, close_dialog=True)
+		self.EndModal(wx.ID_OK)
 
 class ZakatDialog(wx.Dialog):
 	"""Dialog for calculating various types of Zakat."""
@@ -1049,12 +1091,20 @@ class ZakatDialog(wx.Dialog):
 		except RuntimeError:
 			return
 		self._gold_price = price
-		# Auto-fill gold price field if it exists and is empty
+		# Auto-fill gold price field if it exists
 		if "harga_emas" in self._input_fields:
 			try:
 				field = self._input_fields["harga_emas"]
-				if not field.GetValue():
+				# Populate if empty or if we are reloading
+				val = field.GetValue()
+				if not val or val == _("Memuat..."):
 					field.SetValue(str(int(price)))
+			except (RuntimeError, wx.PyDeadObjectError):
+				pass
+		
+		if hasattr(self, 'btn_reload_gold') and self.btn_reload_gold:
+			try:
+				self.btn_reload_gold.Enable()
 			except (RuntimeError, wx.PyDeadObjectError):
 				pass
 
@@ -1090,10 +1140,29 @@ class ZakatDialog(wx.Dialog):
 	def _add_field(self, key, label):
 		"""Add a labeled text input field to the input panel."""
 		lbl = wx.StaticText(self.input_panel, label=label)
-		txt = wx.TextCtrl(self.input_panel)
 		self.input_sizer.Add(lbl, 0, wx.TOP | wx.LEFT | wx.RIGHT, 3)
-		self.input_sizer.Add(txt, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 3)
+		
+		txt = wx.TextCtrl(self.input_panel)
+		
+		if key == "harga_emas":
+			bs = wx.BoxSizer(wx.HORIZONTAL)
+			self.btn_reload_gold = wx.Button(self.input_panel, label=_("Muat Ulang"))
+			bs.Add(txt, 1, wx.EXPAND | wx.RIGHT, 5)
+			bs.Add(self.btn_reload_gold, 0)
+			self.btn_reload_gold.Bind(wx.EVT_BUTTON, self.on_reload_gold_price)
+			self.input_sizer.Add(bs, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 3)
+		else:
+			self.input_sizer.Add(txt, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 3)
+			
 		self._input_fields[key] = txt
+
+	def on_reload_gold_price(self, event):
+		"""Triggered by the Muat Ulang button."""
+		if "harga_emas" in self._input_fields:
+			self._input_fields["harga_emas"].SetValue(_("Memuat..."))
+		if hasattr(self, 'btn_reload_gold'):
+			self.btn_reload_gold.Disable()
+		self._fetch_gold_price_async()
 
 	def _get_float(self, key):
 		"""Get a float value from input field, returns None if invalid."""

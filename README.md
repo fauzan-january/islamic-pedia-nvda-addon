@@ -32,10 +32,11 @@ Islamic Pedia menggunakan sistem **Mode Perintah (Command Layer)** untuk menghem
 
 Shortcut Utama Untuk Masuk ke Mode Perintah (command layer): `NVDA+Shift+I`.
 
-- **B** atau **F1** - Menampilkan bantuan dan daftar perintah pengunaan.
+- **B** atau **F1** - Menampilkan bantuan teks dan Dokumentasi Lengkap (Readme).
 - **P** - Membuka menu Pengaturan.
 - **J** - Menampilkan jadwal sholat hari ini.
 - **K** - Menampilkan arah kiblat.
+- **W** - Menampilkan status waktu sholat terdekat saat ini (sisa waktu/waktu berlalu).
 - **M** - Mencari masjid terdekat (radius 3km).
 - **T** - Menampilkan tanggal Hijriyah hari ini.
 - **Z** - Membuka Kalkulator Zakat.
