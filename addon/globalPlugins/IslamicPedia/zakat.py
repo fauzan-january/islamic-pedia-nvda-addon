@@ -68,7 +68,7 @@ def _fetch_from_harga_emas_org(headers):
 								f"Rp {int(float(price_val)):,}/gram"
 							)
 							return float(price_val)
-				except:
+				except Exception:
 					pass
 
 			# Fallback 1: Jika tidak ada JSON-LD, cari spesifik baris 1 gram Antam

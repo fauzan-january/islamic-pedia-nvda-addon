@@ -77,7 +77,8 @@ class Config:
 								if sub_k not in data[k]:
 									data[k][sub_k] = sub_v
 					return data
-			except:
+			except Exception as e:
+				logHandler.log.warning(f"IslamicPedia: Failed to load config (using defaults): {e}")
 				return defaults
 		return defaults
 
@@ -100,7 +101,7 @@ class Config:
 			if os.path.exists(temp_path):
 				try:
 					os.remove(temp_path)
-				except:
+				except OSError:
 					pass
 
 	def get_calc_method(self):

@@ -69,14 +69,9 @@ class SettingsPanelUI(wx.Panel):
 		self.SetSizer(self.mainSizer)
 		self.mainSizer.Fit(self)
 		
-		# Re-enable UI updates
 		self.Thaw()
 		
 		self.cities_cache = []
-		
-		# Lazy Loading Safety: Initialize variables used in on_save
-		self.variant_ctrls = {}
-		self.spin_pre_dur = None
 
 	def on_tab_changed(self, event):
 		sel = event.GetSelection()
@@ -442,7 +437,7 @@ class SettingsPanelUI(wx.Panel):
 		current_mode = self.config.data.get("notification_modes", {}).get(key, "speech") # Default speech
 		try:
 			cmb_mode.SetSelection(modes.index(current_mode))
-		except:
+		except ValueError:
 			cmb_mode.SetSelection(1) # Default Speech
 			
 		bs_mode.Add(lbl_mode, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
@@ -536,20 +531,6 @@ class SettingsPanelUI(wx.Panel):
 		update_visibility() # Initial state
 
 	def setup_donation_tab(self):
-		pass # Logic moved to separate block to avoid context mismatch issues in replacement, 
-		     # but since we are replacing add_variant_row, we stop here.
-		     # Wait, I need to check where add_variant_row ends. It ends at update_visibility.
-		     # setup_donation_tab is next.
-
-	# ... (save logic needs to be patched separately or included if I expand the range)
-	# The prompt asked to translate combo items AND fix save logic.
-	# Save logic is at lines 605-612. add_variant_row is 198-300.
-	# They are far apart. I should do TWO Replace calls.
-	
-	# This call is for add_variant_row ONLY.
-
-
-	def setup_donation_tab(self):
 		sizer = wx.BoxSizer(wx.VERTICAL)
 		
 		# Intro Text
@@ -608,27 +589,6 @@ class SettingsPanelUI(wx.Panel):
 		self.page_donation.SetSizer(sizer)
 		self.page_donation.Layout()
 
-	def on_copy_list_selection(self, event):
-		sel = self.list_donation.GetSelection()
-		if sel != wx.NOT_FOUND:
-			item_text = self.donation_items[sel]
-			# Extract number using Regex (Simple sequence of digits > 6 chars to avoid copying '2025' or short numbers if any)
-			import re
-			# Look for sequence of digits, allowing potential spaces or dashes if formatted, 
-			# but here our format is clean digits.
-			match = re.search(r':\s*(\d+)', item_text)
-			if match:
-				number = match.group(1)
-				self.copy_to_clipboard(number)
-			else:
-				# Fallback: Copy pure digits if found
-				match_fallback = re.search(r'(\d{8,})', item_text)
-				if match_fallback:
-					self.copy_to_clipboard(match_fallback.group(1))
-				else:
-					ui.message(_("Tidak ditemukan nomor rekening pada baris ini."))
-		else:
-			ui.message(_("Silakan pilih rekening terlebih dahulu."))
 
 	def copy_to_clipboard(self, text):
 		if wx.TheClipboard.Open():
@@ -806,7 +766,7 @@ class SettingsPanelUI(wx.Panel):
 			msg += "\n".join(errors)
 			msg += _("\n\nMohon pilih suara terlebih dahulu agar notifikasi berjalan normal.")
 			gui.messageBox(msg, _("Konfigurasi Belum Lengkap"), wx.OK | wx.ICON_WARNING, self)
-			return
+			# Lanjut proses simpan pengaturan yang lain (soft warning)
 
 		# 1. Save Pre-Reminder Duration (Global)
 		if self.spin_pre_dur:
@@ -977,6 +937,7 @@ class SettingsDialog(wx.Dialog):
 		
 		self.Bind(wx.EVT_CHAR_HOOK, self.on_char_hook)
 		self.Bind(wx.EVT_CLOSE, self.on_close)
+		self._closing_with_ok = False
 
 	def on_char_hook(self, event):
 		if event.GetKeyCode() == wx.WXK_ESCAPE:
@@ -985,10 +946,16 @@ class SettingsDialog(wx.Dialog):
 			event.Skip()
 
 	def on_close(self, event):
+		if getattr(self, '_closing_with_ok', False):
+			event.Skip()
+			return
 		self.on_cancel(None)
 
 	def on_apply(self, event):
 		self.ui._save_settings(show_confirmation=True, close_dialog=False)
+		import copy
+		if hasattr(self.ui, '_original_config_data'):
+			self.ui._original_config_data = copy.deepcopy(self.ui.config.data)
 		# Update the restore-point so Cancel reverts to the last applied value
 		if hasattr(self.ui, 'slider_volume') and self.ui.slider_volume:
 			self.ui._original_volume = self.ui.slider_volume.GetValue()
@@ -1002,6 +969,7 @@ class SettingsDialog(wx.Dialog):
 		self.EndModal(wx.ID_CANCEL)
 
 	def on_ok(self, event):
+		self._closing_with_ok = True
 		self.ui._save_settings(show_confirmation=False, close_dialog=True)
 		self.EndModal(wx.ID_OK)
 

@@ -193,23 +193,26 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 				# For other commands (Qibla, Prayer), act silently (just sound) to be faster.
 				should_speak = (script_name == "script_exitLayer")
 				
-				def _wrapped_script(gesture):
+				# FIX: Use default arguments to force early binding of closure variables.
+				# Without this, all captured vars (should_speak, target_script, script_name)
+				# would be looked up at call-time (late binding), not definition-time.
+				dialog_scripts = ["script_settings", "script_islamicPedia", "script_findMosques", "script_help"]
+				def _wrapped_script(gesture, _speak=should_speak, _target=target_script, _sname=script_name, _dialog_scripts=dialog_scripts):
 					# CRITICAL: Close layer first to prevent stuck state
-					self.closeCommandsLayer(speak=should_speak)
+					self.closeCommandsLayer(speak=_speak)
 					
 					# CHECK: If command opens a dialog, check lock first
 					# These scripts open dialogs: settings, islamicPedia, findMosques, help
-					dialog_scripts = ["script_settings", "script_islamicPedia", "script_findMosques", "script_help"]
-					if script_name in dialog_scripts:
+					if _sname in _dialog_scripts:
 						if not self.check_dialog_open():
 							return
 
-					if not should_speak:
+					if not _speak:
 						# Optimized: Reduced delay to 50ms for snappy response.
-						wx.CallLater(50, target_script, gesture)
+						wx.CallLater(50, _target, gesture)
 					else:
 						# For Escape: Speech "Keluar" runs in closeCommandsLayer. Script does nothing.
-						target_script(gesture)
+						_target(gesture)
 						
 				return _wrapped_script
 			else:
@@ -487,10 +490,10 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			return
 
 		# Run in background to prevent freezing NVDA
-		if getattr(self, "_is_fetching", False):
+		if getattr(self, "_is_fetching_prayer", False):
 			return
 		
-		self._is_fetching = True
+		self._is_fetching_prayer = True
 		
 		# Params
 		method = self.config.get_calc_method()
@@ -507,7 +510,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 					logHandler.log.error(f"IslamicPedia API Error: {e}")
 					wx.CallAfter(ui.message, _("Gagal memuat jadwal. Mohon periksa koneksi internet."))
 			finally:
-				self._is_fetching = False
+				self._is_fetching_prayer = False
 		
 		threading.Thread(target=fetch, daemon=True).start()
 		# Shortened message to prevent speech overlap (User Feedback)
@@ -517,7 +520,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		if schedule:
 			city_name = self.config.get_short_city_name()
 			msg = []
-			msg.append(_(f"Jadwal Sholat untuk wilayah {city_name} dan sekitarnya"))
+			msg.append(_("Jadwal Sholat untuk wilayah {} dan sekitarnya").format(city_name))
 			msg.append("-" * 20)
 			
 			msg.append(_("-- SHOLAT WAJIB --"))
@@ -609,10 +612,10 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			ui.message(_("Lokasi belum diatur. Silakan tekan P untuk mengatur lokasi."))
 			return
 
-		if getattr(self, "_is_fetching", False):
+		if getattr(self, "_is_fetching_hijri", False):
 			return
 		
-		self._is_fetching = True
+		self._is_fetching_hijri = True
 		method = self.config.get_calc_method()
 		school = self.config.get_asr_method()
 		
@@ -625,7 +628,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 					logHandler.log.error(f"IslamicPedia API Error: {e}")
 					wx.CallAfter(ui.message, _("Gagal memuat tanggal Hijriyah. Mohon periksa koneksi internet."))
 			finally:
-				self._is_fetching = False
+				self._is_fetching_hijri = False
 		
 		threading.Thread(target=fetch, daemon=True).start()
 		# Removed "Sedang memuat..." message as per user request
@@ -898,13 +901,3 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		# Layer is already closed by getScript.
 		# This function just serves as a target for the Escape gesture so it consumes the key.
 		pass
-
-	def terminate(self):
-		if getattr(self, 'scheduler', None):
-			self.scheduler.stop_timer()
-		if getattr(self, 'player', None):
-			self.player.cleanup()
-		if getattr(self, 'mosque_feedback_timer', None):
-			self.mosque_feedback_timer.Stop()
-			
-		super().terminate()

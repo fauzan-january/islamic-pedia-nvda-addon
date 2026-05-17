@@ -127,7 +127,12 @@ class SoundManager:
 			return
 
 		# Determine which file to play
-		variant_name = self.config.data.get("sound_variants", {}).get(prayer_name, "dzami1.wav")
+		variant_name = self.config.data.get("sound_variants", {}).get(prayer_name, "")
+		
+		# If no variant configured, skip silently (user hasn't set up audio yet)
+		if not variant_name:
+			logHandler.log.warning(f"IslamicPedia: No sound variant configured for {prayer_name}, skipping audio playback.")
+			return
 		
 		# For actual playback (alarm), we expect file to be in cache
 		# If not in cache, try to download valid file to cache
@@ -517,11 +522,6 @@ class SoundManager:
 		# 4. Set volume from config (MCI scale 0-1000)
 		# While MCI volume can impact the master app session volume, we fallback to it
 		# just in case WMP COM fails, so the user at least gets volume control.
-		mci_vol = max(0, min(1000, vol * 10))
-		mci(f"setaudio {alias} volume to {mci_vol}", None, 0, 0)
-
-		# 4. Set volume from config (MCI scale 0-1000)
-		vol = self.config.get_notification_volume()   # 0-100
 		mci_vol = max(0, min(1000, vol * 10))
 		mci(f"setaudio {alias} volume to {mci_vol}", None, 0, 0)
 

@@ -111,8 +111,6 @@ class Scheduler:
 							self.cached_hijri = self.hijri_today
 				except Exception as e:
 					logHandler.log.error(f"IslamicPedia: Error checking Maghrib switch: {e}")
-				except:
-					pass
 
 
 			
@@ -247,7 +245,7 @@ class Scheduler:
 					import tones
 					tones.beep(440, 200)
 					tones.beep(440, 200)
-				except:
+				except Exception:
 					pass
 		else:
 			# Differentiate message based on type

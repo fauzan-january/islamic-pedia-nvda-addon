@@ -10,20 +10,17 @@ addon_info = AddonInfo(
 	),
 	addon_version="1.2.0",
 	addon_changelog=_(
-		"- Menambahkan fitur Status Waktu Sholat Saat Ini (Shortcut W) untuk mengetahui waktu tersisa atau yang telah berlalu.\n"
-		"- Memperbarui menu Bantuan (B/F1) untuk menampilkan opsi Dokumentasi Lengkap.\n"
-		"- Menambahkan fitur Kalkulator Zakat untuk menghitung 5 jenis zakat: Penghasilan, Maal (Harta/Tabungan), Emas, Perak, dan Fitrah.\n"
-		"- Menambahkan shortcut Z untuk membuka Kalkulator Zakat (NVDA+Shift+I lalu Z).\n"
-		"- Menambahkan input dinamis pada dialog Kalkulator Zakat yang berubah sesuai jenis zakat yang dipilih dari dropdown.\n"
-		"- Menambahkan auto-fetch harga emas Antam Indonesia dari harga-emas.org saat dialog zakat dibuka, dengan fallback ke harga emas internasional jika gagal.\n"
-		"- Menambahkan tombol Salin Hasil pada dialog Kalkulator Zakat yang muncul otomatis setelah ada hasil perhitungan.\n"
-		"- Menambahkan pengaturan volume notifikasi (slider 0-100%) dengan live preview saat tombol test ditekan.\n"
-		"- Menambahkan pemilihan perangkat audio output untuk notifikasi dengan fallback otomatis ke perangkat default.\n"
-		"- Menambahkan grup Pengaturan Global di bagian atas tab Notifikasi.\n"
-		"- Mengoptimalkan metode pemutaran audio notifikasi dari winsound ke waveOutOpen (WinMM) untuk file WAV.\n"
-		"- Mengoptimalkan pengelolaan fokus dialog menggunakan pola standar NVDA (prePopup/postPopup).\n"
-		"- Memperbaiki dialog pengaturan yang tidak langsung mendapat fokus saat pertama kali dibuka setelah restart NVDA.\n"
-		"- Memperbaiki tombol Batal pada dialog pengaturan yang sebelumnya tidak memiliki handler."
+		"- Meningkatkan dukungan dan kompatibilitas untuk NVDA versi 2026.1.\n"
+		"- Memperbaiki sejumlah bug dan potensi error yang terdeteksi.\n"
+		"- Memperbaiki masalah fokus pada dialog \"Masjid Terdekat\" agar langsung dapat dibaca oleh pembaca layar saat pertama kali dibuka.\n"
+		"- Menambahkan menu interaktif pada perintah Bantuan (F1 atau B) untuk memilih antara membuka \"Daftar Perintah\" atau \"Dokumentasi Lengkap\".\n"
+		"- Memperbarui antarmuka pratinjau audio di pengaturan notifikasi; tombol \"Berhenti\" kini akan otomatis kembali menjadi \"Tes\" saat pemutaran audio selesai.\n"
+		"- Menambahkan tombol \"Muat Ulang\" untuk memutakhirkan harga emas secara manual pada kalkulator zakat.\n"
+		"- Meningkatkan indikator proses pengunduhan audio pratinjau agar lebih intuitif.\n"
+		"- Mengoptimalkan pemuatan Tab Notifikasi agar langsung dimuat saat dialog pengaturan dibuka.\n"
+		"- Menyeragamkan daftar metode kalkulasi waktu sholat menggunakan bahasa Indonesia sepenuhnya.\n"
+		"- Memperbaiki integrasi menu pengaturan; kini pengaturan Islamic Pedia dapat diakses langsung melalui menu Pengaturan bawaan NVDA, tidak lagi hanya bergantung pada lapisan perintah.\n"
+		"- Menambahkan dan menyesuaikan beberapa varian suara baru untuk notifikasi audio."
 	),
 	addon_author="Fauzan January <surel@fauzanaja.com>",
 	addon_url="https://fauzanaja.com/nvda-addon/",

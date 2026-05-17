@@ -1,8 +1,16 @@
 ## Changelog - Versi 1.2.0
 
-- Memperbarui dukungan ke NVDA 2026.1 (Python 3.13, 64-bit).
-- Memperkuat kompatibilitas ctypes 64-bit pada modul audio (WAVEHDR struct: dwUser dan reserved diubah dari c_void_p ke c_size_t sesuai spesifikasi DWORD_PTR Windows).
-- Tetap kompatibel mundur hingga NVDA 2024.1.
+- Meningkatkan dukungan dan kompatibilitas untuk NVDA versi 2026.1.
+- Memperbaiki sejumlah bug dan potensi error yang terdeteksi.
+- Memperbaiki masalah fokus pada dialog "Masjid Terdekat" agar langsung dapat dibaca oleh pembaca layar saat pertama kali dibuka.
+- Menambahkan menu interaktif pada perintah Bantuan (F1 atau B) untuk memilih antara membuka "Daftar Perintah" atau "Dokumentasi Lengkap".
+- Memperbarui antarmuka pratinjau audio di pengaturan notifikasi; tombol "Berhenti" kini akan otomatis kembali menjadi "Tes" saat pemutaran audio selesai.
+- Menambahkan tombol "Muat Ulang" untuk memutakhirkan harga emas secara manual pada kalkulator zakat.
+- Meningkatkan indikator proses pengunduhan audio pratinjau agar lebih intuitif.
+- Mengoptimalkan pemuatan Tab Notifikasi agar langsung dimuat saat dialog pengaturan dibuka.
+- Menyeragamkan daftar metode kalkulasi waktu sholat menggunakan bahasa Indonesia sepenuhnya.
+- Memperbaiki integrasi menu pengaturan; kini pengaturan Islamic Pedia dapat diakses langsung melalui menu Pengaturan bawaan NVDA, tidak lagi hanya bergantung pada lapisan perintah.
+- Menambahkan dan menyesuaikan beberapa varian suara baru untuk notifikasi audio.
 
 ## Changelog - Versi 1.1.0
 
