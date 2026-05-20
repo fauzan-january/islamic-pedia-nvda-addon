@@ -34,9 +34,9 @@ Shortcut Utama Untuk Masuk ke Mode Perintah (command layer): `NVDA+Shift+I`.
 
 - **B** atau **F1** - Menampilkan bantuan teks dan Dokumentasi Lengkap (Readme).
 - **P** - Membuka menu Pengaturan.
+- **W** - Menampilkan status waktu sholat terdekat saat ini (sisa waktu/waktu berlalu).
 - **J** - Menampilkan jadwal sholat hari ini.
 - **K** - Menampilkan arah kiblat.
-- **W** - Menampilkan status waktu sholat terdekat saat ini (sisa waktu/waktu berlalu).
 - **M** - Mencari masjid terdekat (radius 3km).
 - **T** - Menampilkan tanggal Hijriyah hari ini.
 - **Z** - Membuka Kalkulator Zakat.
@@ -47,13 +47,13 @@ Shortcut Utama Untuk Masuk ke Mode Perintah (command layer): `NVDA+Shift+I`.
 
 ## Pengaturan
 
-Anda dapat menyesuaikan berbagai opsi melalui menu Pengaturan (Tekan `P` di dalam mode perintah):
-
+Anda dapat menyesuaikan berbagai opsi melalui menu Pengaturan dengan menekan P di Mode Perintah, atau langsung melalui menu NVDA: Preferensi → Pengaturan → IslamicPedia.
+- Atur indikator pencarian masjid dan unduhan audio pada tab **Umum**.
 - Cari dan pilih kota tempat tinggal Anda untuk akurasi jadwal pada tab **Lokasi**.
 - Atur mode notifikasi (Suara, Bicara, Keduanya, atau Mati) untuk setiap waktu sholat pada tab **Notifikasi**.
 - Pilih file audio pengingat yang sesuai keinginan Anda pada tab **Notifikasi**, audio boleh berbeda untuk setiap waktu sholat.
-- **Pengingat Awal**: Atur durasi pengingat awal (misal: 10 menit sebelum waktu masuk) agar Anda bisa bersiap-siap.
-- Sesuaikan Metode Perhitungan, Mazhab Ashar, dan Koreksi Tanggal Hijriyah pada tab **Lanjutan**.
+- Atur durasi pengingat awal pada tab **Notifikasi** (misal: 10 menit sebelum waktu masuk) agar Anda bisa bersiap-siap.
+- Sesuaikan Metode Perhitungan, Mazhab Ashar, dan Koreksi Tanggal Hijriyah pada tab **Hisab**.
 
 ## Catatan
 
@@ -70,8 +70,8 @@ Mari beramal jariah dengan mendukung pengembangan Islamic Pedia agar terus berma
 
 Metode Donasi yang Tersedia:
 
-- Bank Rakyat Indonesia (BRI), Atas Nama Fauzan:
-```069501011391500```
+- PayPal: [donate@fauzanaja.com](mailto:donate@fauzanaja.com)
+- PayPal.me: [paypal.me/fauzanjanuary](https://paypal.me/fauzanjanuary)
 
 - Bank Jago, Atas Nama Fauzan:
 ```106529506491```
@@ -85,4 +85,5 @@ E-Wallet (Dana/GoPay), Atas Nama Fauzan:
 
 - Surel: [surel@fauzanaja.com](mailto:surel@fauzanaja.com)
 - Telegram: [fauzan_january](https://t.me/fauzan_january/)
+- WhatsApp Channel: [fauzan_january](https://whatsapp.com/channel/0029VaFLXIO545upgh6w5h3K)
 - Situs web: [fauzanaja.com](https://fauzanaja.com/)

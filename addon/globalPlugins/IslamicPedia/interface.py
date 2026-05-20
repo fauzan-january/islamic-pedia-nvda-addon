@@ -538,7 +538,7 @@ class SettingsPanelUI(wx.Panel):
 		# This allows user to use Arrow Keys to read everything from Intro to Bank Details without Tabbing.
 		full_text = (
 			_("Mari beramal jariyah dengan cara berdonasi untuk mendukung pengembangan addon Islamic Pedia agar terus bermanfaat bagi umat!\n\n") +
-			"Bank BRI (Fauzan):\n069501011391500\n\n" +
+			"PayPal:\ndonate@fauzanaja.com\n\n" +
 			"Bank Jago (Fauzan):\n106529506491\n\n" +
 			"E-Wallet Dana/GoPay (Fauzan):\n085272368074"
 		)
@@ -555,9 +555,9 @@ class SettingsPanelUI(wx.Panel):
 		# Copy Buttons Row (Specific Numbers)
 		sb_copy = wx.StaticBoxSizer(wx.HORIZONTAL, self.page_donation, _("Salin Nomor Rekening"))
 		
-		btn_bri = wx.Button(self.page_donation, label=_("Salin BRI"))
-		btn_bri.Bind(wx.EVT_BUTTON, lambda evt: self.copy_to_clipboard("069501011391500"))
-		sb_copy.Add(btn_bri, 1, wx.RIGHT, 5)
+		btn_paypal = wx.Button(self.page_donation, label=_("Salin PayPal"))
+		btn_paypal.Bind(wx.EVT_BUTTON, lambda evt: self.copy_to_clipboard("donate@fauzanaja.com"))
+		sb_copy.Add(btn_paypal, 1, wx.RIGHT, 5)
 		
 		btn_jago = wx.Button(self.page_donation, label=_("Salin Jago"))
 		btn_jago.Bind(wx.EVT_BUTTON, lambda evt: self.copy_to_clipboard("106529506491"))
@@ -573,6 +573,11 @@ class SettingsPanelUI(wx.Panel):
 		
 		# External Link Buttons
 		btnSizer = wx.BoxSizer(wx.HORIZONTAL)
+		
+		# PayPal.me
+		self.btn_paypal_me = wx.Button(self.page_donation, label=_("Donasi via PayPal.me"))
+		self.btn_paypal_me.Bind(wx.EVT_BUTTON, lambda evt: self.open_url("https://paypal.me/fauzanjanuary"))
+		btnSizer.Add(self.btn_paypal_me, 0, wx.RIGHT, 10)
 		
 		# Saweria
 		self.btn_saweria = wx.Button(self.page_donation, label=_("Donasi via Saweria"))
